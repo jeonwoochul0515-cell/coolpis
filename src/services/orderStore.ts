@@ -34,11 +34,16 @@ export async function saveOrder(
     uid,
     registrationNumber: profile.registrationNumber,
     businessName: profile.businessName,
+    representative: profile.representative,
+    address: profile.address,
+    phone: profile.phone,
     items: orderItems,
     totalItems,
     totalPrice,
     status: 'pending',
     createdAt: new Date().toISOString(),
+    deliveryVehicle: null,
+    deliverySequence: 0,
   });
 
   console.log('[주문 저장] id:', docRef.id);
