@@ -168,7 +168,7 @@ export default function ProfilePage() {
       }));
       setInfo('사업자등록증 인식이 완료되었습니다.');
     } catch (err) {
-      setError(getErrorMessage(err, 'OCR 처리 중 오류가 발생했습니다.'));
+      setError(err instanceof Error ? err.message : 'OCR 처리 중 오류가 발생했습니다.');
     } finally {
       setIsOcr(false);
     }
