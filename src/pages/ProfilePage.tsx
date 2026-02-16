@@ -21,6 +21,8 @@ import { useProfile } from '../context/ProfileContext';
 import { useAuth } from '../context/AuthContext';
 import { fileToDataUrl, runOcr, parseBusinessRegistration } from '../services/ocr';
 import { findProfileByRegNumber, saveProfile } from '../services/profileStore';
+import { getOrdersByUid } from '../services/orderStore';
+import { getPaymentsByRegNumber } from '../services/paymentStore';
 import { useNavigate } from 'react-router-dom';
 import type { BusinessProfile } from '../types/profile';
 import { getErrorMessage } from '../utils/errorMessage';
@@ -68,6 +70,37 @@ export default function ProfilePage() {
 
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  // 이번달 주문 요약
+  const [monthlyOrderCount, setMonthlyOrderCount] = useState(0);
+  const [monthlyOrderTotal, setMonthlyOrderTotal] = useState(0);
+  const [monthlyPaymentTotal, setMonthlyPaymentTotal] = useState(0);
+
+  useEffect(() => {
+    if (!uid || !profile?.registrationNumber) return;
+    (async () => {
+      try {
+        const [orders, payments] = await Promise.all([
+          getOrdersByUid(uid),
+          getPaymentsByRegNumber(profile.registrationNumber),
+        ]);
+        const now = new Date();
+        const thisMonth = orders.filter((o) => {
+          const d = new Date(o.createdAt);
+          return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+        });
+        const thisMonthPayments = payments.filter((p) => {
+          const d = new Date(p.createdAt);
+          return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+        });
+        setMonthlyOrderCount(thisMonth.length);
+        setMonthlyOrderTotal(thisMonth.reduce((sum, o) => sum + o.totalPrice, 0));
+        setMonthlyPaymentTotal(thisMonthPayments.reduce((sum, p) => sum + p.amount, 0));
+      } catch (err) {
+        console.error('주문 요약 조회 실패:', err);
+      }
+    })();
+  }, [uid, profile?.registrationNumber]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -373,6 +406,31 @@ export default function ProfilePage() {
               </Button>
             )}
           </Box>
+
+          {/* 이번달 주문 요약 카드 */}
+          <Paper sx={{ p: 2, mb: 2, background: 'linear-gradient(135deg, #fce4ec 0%, #f8bbd0 100%)' }}>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+              이번달 주문 요약
+            </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Box sx={{ textAlign: 'center', flex: 1 }}>
+                <Typography variant="h6" fontWeight={700}>{monthlyOrderCount}건</Typography>
+                <Typography variant="caption" color="text.secondary">주문 건수</Typography>
+              </Box>
+              <Divider orientation="vertical" flexItem />
+              <Box sx={{ textAlign: 'center', flex: 1 }}>
+                <Typography variant="h6" fontWeight={700}>{monthlyOrderTotal.toLocaleString()}원</Typography>
+                <Typography variant="caption" color="text.secondary">주문 총액</Typography>
+              </Box>
+              <Divider orientation="vertical" flexItem />
+              <Box sx={{ textAlign: 'center', flex: 1 }}>
+                <Typography variant="h6" fontWeight={700} color={(monthlyOrderTotal - monthlyPaymentTotal) > 0 ? 'error.main' : 'success.main'}>
+                  {(monthlyOrderTotal - monthlyPaymentTotal).toLocaleString()}원
+                </Typography>
+                <Typography variant="caption" color="text.secondary">미수금</Typography>
+              </Box>
+            </Box>
+          </Paper>
 
           <Paper sx={{ p: 3 }}>
             <Box component="form" onSubmit={handleUpdate} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

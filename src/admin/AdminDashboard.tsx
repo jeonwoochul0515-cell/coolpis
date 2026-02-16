@@ -14,9 +14,12 @@ import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Stack from '@mui/material/Stack';
 import IconButton from '@mui/material/IconButton';
+import TextField from '@mui/material/TextField';
+import Divider from '@mui/material/Divider';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import DeleteIcon from '@mui/icons-material/Delete';
 import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
@@ -27,7 +30,9 @@ import {
   assignToVehicle,
   batchUpdateSequences,
 } from '../services/adminOrderStore';
+import { getAllPayments, addPayment, deletePayment } from '../services/paymentStore';
 import type { Order, DeliveryVehicle } from '../types/order';
+import type { Payment } from '../types/payment';
 
 type TabFilter = 'all' | 'unassigned' | '배송차1' | '배송차2' | '배송차3' | 'byBusiness';
 
@@ -56,19 +61,30 @@ const VEHICLES: DeliveryVehicle[] = ['배송차1', '배송차2', '배송차3'];
 
 function BusinessGroupView({
   orders,
+  payments,
+  dateRange,
+  onDateRangeChange,
+  onAddPayment,
+  onDeletePayment,
   formatDate,
 }: {
   orders: Order[];
+  payments: Payment[];
+  dateRange: { start: string; end: string };
+  onDateRangeChange: (start: string, end: string) => void;
+  onAddPayment: (regNum: string, businessName: string, amount: number, memo: string) => Promise<void>;
+  onDeletePayment: (paymentId: string) => Promise<void>;
   formatDate: (iso: string) => string;
 }) {
-  const now = new Date();
-  const thisMonthOrders = orders.filter((o) => {
-    const d = new Date(o.createdAt);
-    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  const [paymentForms, setPaymentForms] = useState<Record<string, { amount: string; memo: string }>>({});
+
+  const filteredOrders = orders.filter((o) => {
+    const d = o.createdAt.slice(0, 10);
+    return d >= dateRange.start && d <= dateRange.end;
   });
 
   const grouped = new Map<string, Order[]>();
-  for (const order of thisMonthOrders) {
+  for (const order of filteredOrders) {
     const key = order.registrationNumber;
     const list = grouped.get(key);
     if (list) {
@@ -78,81 +94,191 @@ function BusinessGroupView({
     }
   }
 
-  if (grouped.size === 0) {
-    return (
-      <Typography color="text.secondary" textAlign="center" py={8}>
-        이번달 주문이 없습니다.
-      </Typography>
-    );
+  const paymentsByReg = new Map<string, Payment[]>();
+  for (const p of payments) {
+    const list = paymentsByReg.get(p.registrationNumber);
+    if (list) {
+      list.push(p);
+    } else {
+      paymentsByReg.set(p.registrationNumber, [p]);
+    }
   }
 
   return (
-    <Stack spacing={1}>
-      {Array.from(grouped.entries()).map(([regNum, groupOrders]) => {
-        const first = groupOrders[0];
-        const totalAmount = groupOrders.reduce((sum, o) => sum + o.totalPrice, 0);
-        return (
-          <Accordion key={regNum} disableGutters>
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-              <Box sx={{ width: '100%' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                  <Typography variant="subtitle1" fontWeight="bold">
-                    {first.businessName}
+    <Stack spacing={2}>
+      <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+        <TextField
+          type="date"
+          label="시작일"
+          value={dateRange.start}
+          onChange={(e) => onDateRangeChange(e.target.value, dateRange.end)}
+          size="small"
+          InputLabelProps={{ shrink: true }}
+        />
+        <TextField
+          type="date"
+          label="종료일"
+          value={dateRange.end}
+          onChange={(e) => onDateRangeChange(dateRange.start, e.target.value)}
+          size="small"
+          InputLabelProps={{ shrink: true }}
+        />
+      </Box>
+
+      {grouped.size === 0 ? (
+        <Typography color="text.secondary" textAlign="center" py={8}>
+          해당 기간 주문이 없습니다.
+        </Typography>
+      ) : (
+        Array.from(grouped.entries()).map(([regNum, groupOrders]) => {
+          const first = groupOrders[0];
+          const totalAmount = groupOrders.reduce((sum, o) => sum + o.totalPrice, 0);
+          const regPayments = paymentsByReg.get(regNum) ?? [];
+          const paidTotal = regPayments.reduce((sum, p) => sum + p.amount, 0);
+          const unpaid = totalAmount - paidTotal;
+          const form = paymentForms[regNum] ?? { amount: '', memo: '' };
+
+          return (
+            <Accordion key={regNum} disableGutters>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Box sx={{ width: '100%' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                    <Typography variant="subtitle1" fontWeight="bold">
+                      {first.businessName}
+                    </Typography>
+                    <Chip label={`${groupOrders.length}건`} size="small" color="primary" />
+                    <Typography variant="body2" color="text.secondary" sx={{ ml: 'auto' }}>
+                      총 {totalAmount.toLocaleString()}원
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', gap: 2, mt: 0.5, flexWrap: 'wrap' }}>
+                    <Typography variant="body2" color="success.main">
+                      입금: {paidTotal.toLocaleString()}원
+                    </Typography>
+                    <Typography variant="body2" color={unpaid > 0 ? 'error.main' : 'success.main'} fontWeight="bold">
+                      미수금: {unpaid.toLocaleString()}원
+                    </Typography>
+                  </Box>
+                  <Typography variant="body2" color="text.secondary">
+                    사업자번호: {regNum} | 대표자: {first.representative ?? '정보 없음'} | 연락처: {first.phone ?? '정보 없음'}
                   </Typography>
-                  <Chip label={`${groupOrders.length}건`} size="small" color="primary" />
-                  <Typography variant="body2" color="text.secondary" sx={{ ml: 'auto' }}>
-                    총 {totalAmount.toLocaleString()}원
+                  <Typography variant="body2" color="text.secondary">
+                    주소: {first.address ?? '정보 없음'}
                   </Typography>
                 </Box>
-                <Typography variant="body2" color="text.secondary">
-                  사업자번호: {regNum} | 대표자: {first.representative ?? '정보 없음'} | 연락처: {first.phone ?? '정보 없음'}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  주소: {first.address ?? '정보 없음'}
-                </Typography>
-              </Box>
-            </AccordionSummary>
-            <AccordionDetails sx={{ pt: 0 }}>
-              <Stack spacing={1}>
-                {groupOrders.map((order) => (
-                  <Paper key={order.id} variant="outlined" sx={{ p: 1.5 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                      <Typography variant="body2" color="text.secondary">
-                        {formatDate(order.createdAt)}
+              </AccordionSummary>
+              <AccordionDetails sx={{ pt: 0 }}>
+                <Stack spacing={1}>
+                  {groupOrders.map((order) => (
+                    <Paper key={order.id} variant="outlined" sx={{ p: 1.5 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                        <Typography variant="body2" color="text.secondary">
+                          {formatDate(order.createdAt)}
+                        </Typography>
+                        <Chip
+                          label={STATUS_LABELS[order.status]}
+                          color={STATUS_COLORS[order.status]}
+                          size="small"
+                        />
+                      </Box>
+                      <Typography variant="body2">
+                        {order.items.map((item) => `${item.productName} x${item.quantity}`).join(', ')}
+                        {' — '}
+                        <strong>{order.totalPrice.toLocaleString()}원</strong>
                       </Typography>
-                      <Chip
-                        label={STATUS_LABELS[order.status]}
-                        color={STATUS_COLORS[order.status]}
-                        size="small"
-                      />
-                    </Box>
-                    <Typography variant="body2">
-                      {order.items.map((item) => `${item.productName} x${item.quantity}`).join(', ')}
-                      {' — '}
-                      <strong>{order.totalPrice.toLocaleString()}원</strong>
-                    </Typography>
-                  </Paper>
-                ))}
-              </Stack>
-            </AccordionDetails>
-          </Accordion>
-        );
-      })}
+                    </Paper>
+                  ))}
+
+                  {/* 입금 내역 */}
+                  {regPayments.length > 0 && (
+                    <>
+                      <Divider sx={{ my: 1 }} />
+                      <Typography variant="subtitle2" fontWeight="bold">입금 내역</Typography>
+                      {regPayments.map((p) => (
+                        <Paper key={p.id} variant="outlined" sx={{ p: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Typography variant="body2" sx={{ flex: 1 }}>
+                            {formatDate(p.createdAt)} — <strong>{p.amount.toLocaleString()}원</strong>
+                            {p.memo ? ` (${p.memo})` : ''}
+                          </Typography>
+                          <IconButton size="small" color="error" onClick={() => onDeletePayment(p.id)}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Paper>
+                      ))}
+                    </>
+                  )}
+
+                  {/* 입금 등록 폼 */}
+                  <Divider sx={{ my: 1 }} />
+                  <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <TextField
+                      size="small"
+                      type="number"
+                      label="입금액"
+                      value={form.amount}
+                      onChange={(e) =>
+                        setPaymentForms((prev) => ({ ...prev, [regNum]: { ...form, amount: e.target.value } }))
+                      }
+                      sx={{ width: 140 }}
+                    />
+                    <TextField
+                      size="small"
+                      label="메모"
+                      value={form.memo}
+                      onChange={(e) =>
+                        setPaymentForms((prev) => ({ ...prev, [regNum]: { ...form, memo: e.target.value } }))
+                      }
+                      sx={{ width: 160 }}
+                    />
+                    <Button
+                      size="small"
+                      variant="contained"
+                      disabled={!form.amount || Number(form.amount) <= 0}
+                      onClick={async () => {
+                        await onAddPayment(regNum, first.businessName, Number(form.amount), form.memo);
+                        setPaymentForms((prev) => ({ ...prev, [regNum]: { amount: '', memo: '' } }));
+                      }}
+                    >
+                      입금 등록
+                    </Button>
+                  </Box>
+                </Stack>
+              </AccordionDetails>
+            </Accordion>
+          );
+        })
+      )}
     </Stack>
   );
+}
+
+function getDefaultDateRange() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const start = `${y}-${String(m + 1).padStart(2, '0')}-01`;
+  const lastDay = new Date(y, m + 1, 0).getDate();
+  const end = `${y}-${String(m + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  return { start, end };
 }
 
 export default function AdminDashboard() {
   const { logout } = useAdminAuth();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<TabFilter>('all');
+  const [dateRange, setDateRange] = useState(getDefaultDateRange);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getAllOrders();
-      setOrders(data);
+      const [orderData, paymentData] = await Promise.all([
+        getAllOrders(),
+        getAllPayments(),
+      ]);
+      setOrders(orderData);
+      setPayments(paymentData);
     } catch (err) {
       console.error('주문 조회 실패:', err);
     } finally {
@@ -363,7 +489,28 @@ export default function AdminDashboard() {
             <CircularProgress />
           </Box>
         ) : filter === 'byBusiness' ? (
-          <BusinessGroupView orders={orders} formatDate={formatDate} />
+          <BusinessGroupView
+            orders={orders}
+            payments={payments}
+            dateRange={dateRange}
+            onDateRangeChange={(start, end) => setDateRange({ start, end })}
+            onAddPayment={async (regNum, businessName, amount, memo) => {
+              const id = await addPayment(regNum, businessName, amount, memo || undefined);
+              setPayments((prev) => [{
+                id,
+                registrationNumber: regNum,
+                businessName,
+                amount,
+                memo: memo || '',
+                createdAt: new Date().toISOString(),
+              }, ...prev]);
+            }}
+            onDeletePayment={async (paymentId) => {
+              await deletePayment(paymentId);
+              setPayments((prev) => prev.filter((p) => p.id !== paymentId));
+            }}
+            formatDate={formatDate}
+          />
         ) : filteredOrders.length === 0 ? (
           <Typography color="text.secondary" textAlign="center" py={8}>
             주문이 없습니다.
