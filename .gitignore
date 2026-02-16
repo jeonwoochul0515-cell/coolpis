@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Old project folder
+calpis-order-app/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
