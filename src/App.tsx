@@ -18,11 +18,49 @@ import OrderHistoryPage from './pages/OrderHistoryPage';
 
 const theme = createTheme({
   palette: {
-    primary: { main: '#1976d2' },
-    secondary: { main: '#f50057' },
+    primary: { main: '#FF6B8A', dark: '#E05577' },
+    secondary: { main: '#FFB74D' },
+    background: { default: '#FFF5F7', paper: '#FFFFFF' },
   },
+  shape: { borderRadius: 12 },
   typography: {
     fontFamily: '"Noto Sans KR", "Roboto", sans-serif',
+  },
+  components: {
+    MuiButton: {
+      styleOverrides: {
+        root: { borderRadius: 25, textTransform: 'none', fontWeight: 600 },
+      },
+    },
+    MuiCard: {
+      styleOverrides: {
+        root: { borderRadius: 16, boxShadow: '0 2px 12px rgba(255,107,138,0.08)' },
+      },
+    },
+    MuiPaper: {
+      styleOverrides: {
+        root: { borderRadius: 16 },
+      },
+    },
+    MuiAppBar: {
+      styleOverrides: {
+        root: { backgroundColor: '#FFFFFF', color: '#FF6B8A', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' },
+      },
+    },
+    MuiTextField: {
+      styleOverrides: {
+        root: {
+          '& .MuiOutlinedInput-root': {
+            '&.Mui-focused fieldset': { borderColor: '#FF6B8A' },
+          },
+        },
+      },
+    },
+    MuiChip: {
+      styleOverrides: {
+        root: { borderRadius: 20 },
+      },
+    },
   },
 });
 

@@ -17,7 +17,7 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: Props) {
   const subtotal = item.product.price * item.quantity;
 
   return (
-    <Paper sx={{ p: 2, mb: 1 }}>
+    <Paper sx={{ p: 2, mb: 1, border: '1px solid #FFE0E6' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
         <Box sx={{ flexGrow: 1, minWidth: 120 }}>
           <Typography variant="subtitle1" fontWeight={600}>

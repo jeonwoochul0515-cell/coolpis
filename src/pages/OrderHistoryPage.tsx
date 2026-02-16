@@ -65,7 +65,7 @@ export default function OrderHistoryPage() {
   if (orders.length === 0) {
     return (
       <Container maxWidth="md" sx={{ py: 6, textAlign: 'center' }}>
-        <ReceiptLongIcon sx={{ fontSize: 80, color: 'text.disabled', mb: 2 }} />
+        <ReceiptLongIcon sx={{ fontSize: 80, color: 'primary.main', mb: 2 }} />
         <Typography variant="h5" gutterBottom color="text.secondary">
           주문 내역이 없습니다
         </Typography>

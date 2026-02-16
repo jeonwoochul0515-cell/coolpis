@@ -22,33 +22,32 @@ export default function Header() {
   return (
     <AppBar position="sticky">
       <Toolbar>
-        <StorefrontIcon sx={{ mr: 1 }} />
-        <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 700 }}>
+        <StorefrontIcon sx={{ mr: 1, color: 'primary.main' }} />
+        <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 700, color: 'primary.main' }}>
           쿨피스 도매주문
         </Typography>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
           {isRegistered && (
             <>
               <Button
-                color="inherit"
+                color="primary"
                 onClick={() => navigate('/')}
                 variant={location.pathname === '/' ? 'outlined' : 'text'}
-                sx={{ borderColor: 'rgba(255,255,255,0.5)' }}
               >
                 제품목록
               </Button>
-              <IconButton color="inherit" onClick={() => navigate('/cart')}>
+              <IconButton color="primary" onClick={() => navigate('/cart')}>
                 <Badge badgeContent={totalItems} color="error">
                   <ShoppingCartIcon />
                 </Badge>
               </IconButton>
-              <IconButton color="inherit" onClick={() => navigate('/orders')} title="주문내역">
+              <IconButton color="primary" onClick={() => navigate('/orders')} title="주문내역">
                 <ReceiptLongIcon />
               </IconButton>
             </>
           )}
           <IconButton
-            color="inherit"
+            color="primary"
             onClick={() => navigate('/profile')}
             title={profile?.businessName || '프로필'}
           >

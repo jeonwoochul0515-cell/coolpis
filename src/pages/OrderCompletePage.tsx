@@ -10,7 +10,7 @@ export default function OrderCompletePage() {
 
   return (
     <Container maxWidth="sm" sx={{ py: 8, textAlign: 'center' }}>
-      <CheckCircleOutlineIcon sx={{ fontSize: 100, color: 'success.main', mb: 2 }} />
+      <CheckCircleOutlineIcon sx={{ fontSize: 100, color: 'primary.main', mb: 2 }} />
       <Typography variant="h4" fontWeight={700} gutterBottom>
         주문이 완료되었습니다
       </Typography>

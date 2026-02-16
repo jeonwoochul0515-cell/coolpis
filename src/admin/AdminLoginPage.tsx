@@ -37,7 +37,7 @@ export default function AdminLoginPage() {
   };
 
   return (
-    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', bgcolor: '#f5f5f5' }}>
+    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', bgcolor: 'background.default' }}>
       <Card sx={{ width: 400, maxWidth: '90vw' }}>
         <CardContent sx={{ p: 4 }}>
           <Typography variant="h5" fontWeight="bold" textAlign="center" mb={3}>

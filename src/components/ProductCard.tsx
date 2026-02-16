@@ -32,7 +32,7 @@ export default function ProductCard({ product, onAdd }: Props) {
         height="160"
         image={product.image}
         alt={product.name}
-        sx={{ objectFit: 'cover' }}
+        sx={{ objectFit: 'cover', borderRadius: '16px 16px 0 0' }}
       />
       <CardContent sx={{ flexGrow: 1 }}>
         <Typography variant="h6" gutterBottom fontWeight={600}>
