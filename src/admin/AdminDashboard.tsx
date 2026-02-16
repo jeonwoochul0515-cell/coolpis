@@ -318,9 +318,6 @@ export default function AdminDashboard() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
 
-  const isVehicleTab = (f: TabFilter): f is DeliveryVehicle =>
-    f === '배송차1' || f === '배송차2' || f === '배송차3';
-
   return (
     <Box>
       <AppBar position="static">
