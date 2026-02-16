@@ -53,8 +53,10 @@ export async function extractBusinessInfo(
   });
 
   if (!res.ok) {
-    const errorBody = await res.text().catch(() => '');
-    throw new Error(`[OCR 에러 ${res.status}] ${errorBody.slice(0, 200)}`);
+    if (res.status === 401 || res.status === 403) {
+      throw new Error('OCR API 인증에 실패했습니다. API 키를 확인하세요.');
+    }
+    throw new Error('OCR 서버에 연결할 수 없습니다. 잠시 후 다시 시도하세요.');
   }
 
   const data = await res.json();
