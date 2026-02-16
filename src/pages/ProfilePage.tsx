@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
@@ -8,10 +8,14 @@ import Snackbar from '@mui/material/Snackbar';
 import LinearProgress from '@mui/material/LinearProgress';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
+import Divider from '@mui/material/Divider';
+import IconButton from '@mui/material/IconButton';
 import StorefrontIcon from '@mui/icons-material/Storefront';
 import SaveIcon from '@mui/icons-material/Save';
+import EditIcon from '@mui/icons-material/Edit';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useProfile } from '../context/ProfileContext';
 import { fileToDataUrl, runOcr, parseBusinessRegistration } from '../services/ocr';
 import { findProfileByRegNumber, saveProfile } from '../services/profileStore';
@@ -19,14 +23,15 @@ import { useNavigate } from 'react-router-dom';
 import type { BusinessProfile } from '../types/profile';
 import { getErrorMessage } from '../utils/errorMessage';
 
-type Step = 'input-reg-number' | 'register';
+type Step = 'input-reg-number' | 'register' | 'view';
 
 export default function ProfilePage() {
-  const { setProfile, uid } = useProfile();
+  const { setProfile, uid, profile, isRegistered } = useProfile();
   const navigate = useNavigate();
 
-  const [step, setStep] = useState<Step>('input-reg-number');
+  const [step, setStep] = useState<Step>(isRegistered ? 'view' : 'input-reg-number');
   const [isChecking, setIsChecking] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   // 등록 폼 — 모든 필드
   const [form, setForm] = useState({
@@ -38,6 +43,22 @@ export default function ProfilePage() {
     address: '',
     phone: '',
   });
+
+  // 등록된 프로필이 있으면 폼에 기존 데이터 채우기
+  useEffect(() => {
+    if (isRegistered && profile) {
+      setForm({
+        registrationNumber: profile.registrationNumber || '',
+        businessName: profile.businessName || '',
+        representative: profile.representative || '',
+        businessType: profile.businessType || '',
+        businessCategory: profile.businessCategory || '',
+        address: profile.address || '',
+        phone: profile.phone || '',
+      });
+      setStep('view');
+    }
+  }, [isRegistered, profile]);
   const [preview, setPreview] = useState<string | null>(null);
   const [isOcr, setIsOcr] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -126,15 +147,38 @@ export default function ProfilePage() {
     setError(null);
 
     try {
-      const profile: BusinessProfile = {
+      const newProfile: BusinessProfile = {
         ...form,
         registrationNumber: formatRegNumber(form.registrationNumber),
         registeredAt: new Date().toISOString(),
       };
-      await setProfile(profile);
+      await setProfile(newProfile);
       navigate('/');
     } catch (err) {
       setError(getErrorMessage(err, '등록에 실패했습니다.'));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // 프로필 수정 저장
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uid || !profile) return;
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const updated: BusinessProfile = {
+        ...form,
+        registrationNumber: profile.registrationNumber, // 사업자번호는 변경 불가
+        registeredAt: profile.registeredAt,
+      };
+      await setProfile(updated);
+      setIsEditing(false);
+      setInfo('프로필이 수정되었습니다.');
+    } catch (err) {
+      setError(getErrorMessage(err, '수정에 실패했습니다.'));
     } finally {
       setIsSaving(false);
     }
@@ -303,6 +347,125 @@ export default function ProfilePage() {
               ← 돌아가기
             </Button>
           </Box>
+        </>
+      )}
+
+      {/* 내 정보 확인/수정 */}
+      {step === 'view' && profile && (
+        <>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+            <IconButton onClick={() => navigate('/')} sx={{ mr: 1 }}>
+              <ArrowBackIcon />
+            </IconButton>
+            <Typography variant="h5" fontWeight={700} sx={{ flexGrow: 1 }}>
+              내 사업자 정보
+            </Typography>
+            {!isEditing && (
+              <Button
+                variant="outlined"
+                startIcon={<EditIcon />}
+                onClick={() => setIsEditing(true)}
+              >
+                수정
+              </Button>
+            )}
+          </Box>
+
+          <Paper sx={{ p: 3 }}>
+            <Box component="form" onSubmit={handleUpdate} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <TextField
+                label="사업자등록번호"
+                value={form.registrationNumber}
+                fullWidth
+                disabled
+              />
+              <TextField
+                label="상호명"
+                value={form.businessName}
+                onChange={handleChange('businessName')}
+                fullWidth
+                disabled={!isEditing}
+              />
+              <TextField
+                label="대표자"
+                value={form.representative}
+                onChange={handleChange('representative')}
+                fullWidth
+                disabled={!isEditing}
+              />
+              <TextField
+                label="업태"
+                value={form.businessType}
+                onChange={handleChange('businessType')}
+                fullWidth
+                disabled={!isEditing}
+              />
+              <TextField
+                label="종목"
+                value={form.businessCategory}
+                onChange={handleChange('businessCategory')}
+                fullWidth
+                disabled={!isEditing}
+              />
+              <TextField
+                label="사업장 소재지"
+                value={form.address}
+                onChange={handleChange('address')}
+                fullWidth
+                disabled={!isEditing}
+              />
+              <TextField
+                label="전화번호"
+                value={form.phone}
+                onChange={handleChange('phone')}
+                fullWidth
+                disabled={!isEditing}
+              />
+
+              {isEditing && (
+                <>
+                  <Divider />
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                      type="submit"
+                      variant="contained"
+                      startIcon={<SaveIcon />}
+                      disabled={isSaving || !form.phone.trim()}
+                      sx={{ flex: 1 }}
+                    >
+                      {isSaving ? '저장 중...' : '저장'}
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      onClick={() => {
+                        // 수정 취소 → 원래 프로필로 복원
+                        setForm({
+                          registrationNumber: profile.registrationNumber || '',
+                          businessName: profile.businessName || '',
+                          representative: profile.representative || '',
+                          businessType: profile.businessType || '',
+                          businessCategory: profile.businessCategory || '',
+                          address: profile.address || '',
+                          phone: profile.phone || '',
+                        });
+                        setIsEditing(false);
+                      }}
+                    >
+                      취소
+                    </Button>
+                  </Box>
+                </>
+              )}
+            </Box>
+          </Paper>
+
+          {!isEditing && (
+            <Box sx={{ textAlign: 'center', mt: 3 }}>
+              <Button variant="contained" size="large" onClick={() => navigate('/')}>
+                제품 목록으로 이동
+              </Button>
+            </Box>
+          )}
         </>
       )}
 
