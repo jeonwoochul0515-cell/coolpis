@@ -19,7 +19,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import LogoutIcon from '@mui/icons-material/Logout';
 import { useProfile } from '../context/ProfileContext';
 import { useAuth } from '../context/AuthContext';
-import { fileToDataUrl, runOcr, parseBusinessRegistration } from '../services/ocr';
+import { fileToDataUrl, extractBusinessInfo } from '../services/ocr';
 import { findProfileByRegNumber, saveProfile } from '../services/profileStore';
 import { getOrdersByUid } from '../services/orderStore';
 import { getPaymentsByRegNumber } from '../services/paymentStore';
@@ -155,8 +155,7 @@ export default function ProfilePage() {
 
     try {
       const dataUrl = await fileToDataUrl(file);
-      const text = await runOcr(dataUrl);
-      const parsed = parseBusinessRegistration(text);
+      const parsed = await extractBusinessInfo(dataUrl);
       // OCR 결과로 폼 자동 채움 (이미 입력한 값은 보존)
       setForm((prev) => ({
         ...prev,
