@@ -1,35 +1,82 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { ThemeProvider, createTheme } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
+import CircularProgress from '@mui/material/CircularProgress';
+import Box from '@mui/material/Box';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { CartProvider } from './context/CartContext';
+import { ProfileProvider, useProfile } from './context/ProfileContext';
+import Header from './components/Header';
+import ProductListPage from './pages/ProductListPage';
+import CartPage from './pages/CartPage';
+import ProfilePage from './pages/ProfilePage';
 
-function App() {
-  const [count, setCount] = useState(0)
+const theme = createTheme({
+  palette: {
+    primary: { main: '#1976d2' },
+    secondary: { main: '#f50057' },
+  },
+  typography: {
+    fontFamily: '"Noto Sans KR", "Roboto", sans-serif',
+  },
+});
+
+function AppRoutes() {
+  const { isRegistered, loading } = useProfile();
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    <Routes>
+      <Route path="/profile" element={<ProfilePage />} />
+      <Route
+        path="/"
+        element={isRegistered ? <ProductListPage /> : <Navigate to="/profile" replace />}
+      />
+      <Route
+        path="/cart"
+        element={isRegistered ? <CartPage /> : <Navigate to="/profile" replace />}
+      />
+    </Routes>
+  );
 }
 
-export default App
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const { loading } = useAuth();
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  return <>{children}</>;
+}
+
+function App() {
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <AuthProvider>
+        <AuthGate>
+          <ProfileProvider>
+            <CartProvider>
+              <Header />
+              <AppRoutes />
+            </CartProvider>
+          </ProfileProvider>
+        </AuthGate>
+      </AuthProvider>
+    </ThemeProvider>
+  );
+}
+
+export default App;
