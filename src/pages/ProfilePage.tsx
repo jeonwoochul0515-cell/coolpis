@@ -26,14 +26,21 @@ export default function ProfilePage() {
   const navigate = useNavigate();
 
   const [step, setStep] = useState<Step>('input-reg-number');
-  const [regNumber, setRegNumber] = useState('');
   const [isChecking, setIsChecking] = useState(false);
 
-  // 등록 폼
+  // 등록 폼 — 모든 필드
+  const [form, setForm] = useState({
+    registrationNumber: '',
+    businessName: '',
+    representative: '',
+    businessType: '',
+    businessCategory: '',
+    address: '',
+    phone: '',
+  });
   const [preview, setPreview] = useState<string | null>(null);
   const [isOcr, setIsOcr] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [phone, setPhone] = useState('');
 
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -41,7 +48,10 @@ export default function ProfilePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // 사업자등록번호 포맷팅
+  const handleChange = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    setForm((prev) => ({ ...prev, [field]: e.target.value }));
+  };
+
   const formatRegNumber = (input: string) => {
     const normalized = input.replace(/[^0-9]/g, '');
     if (normalized.length === 10) {
@@ -52,27 +62,23 @@ export default function ProfilePage() {
 
   // 첫 화면: 사업자등록번호 확인
   const handleCheck = async () => {
-    if (!regNumber.trim() || !uid) return;
+    if (!form.registrationNumber.trim() || !uid) return;
     setIsChecking(true);
     setError(null);
 
     try {
-      const formatted = formatRegNumber(regNumber);
-      console.log('[확인] 조회 시작:', formatted);
+      const formatted = formatRegNumber(form.registrationNumber);
       const existing = await findProfileByRegNumber(formatted);
 
       if (existing) {
-        console.log('[확인] 기존 회원 발견:', existing.profile.registrationNumber);
         await saveProfile(uid, existing.profile);
         await setProfile(existing.profile);
         navigate('/');
       } else {
-        console.log('[확인] 미등록 → 등록화면으로 이동');
-        setRegNumber(formatted);
+        setForm((prev) => ({ ...prev, registrationNumber: formatted }));
         setStep('register');
       }
     } catch (err) {
-      console.error('[확인] 에러:', err);
       setError(getErrorMessage(err, '조회 중 오류가 발생했습니다.'));
     } finally {
       setIsChecking(false);
@@ -94,10 +100,16 @@ export default function ProfilePage() {
       const dataUrl = await fileToDataUrl(file);
       const text = await runOcr(dataUrl);
       const parsed = parseBusinessRegistration(text);
-      // OCR에서 사업자등록번호 인식되면 업데이트
-      if (parsed.registrationNumber) {
-        setRegNumber(parsed.registrationNumber);
-      }
+      // OCR 결과로 폼 자동 채움 (이미 입력한 값은 보존)
+      setForm((prev) => ({
+        ...prev,
+        registrationNumber: parsed.registrationNumber || prev.registrationNumber,
+        businessName: parsed.businessName || prev.businessName,
+        representative: parsed.representative || prev.representative,
+        businessType: parsed.businessType || prev.businessType,
+        businessCategory: parsed.businessCategory || prev.businessCategory,
+        address: parsed.address || prev.address,
+      }));
       setInfo('사업자등록증 인식이 완료되었습니다.');
     } catch (err) {
       setError(getErrorMessage(err, 'OCR 처리 중 오류가 발생했습니다.'));
@@ -115,28 +127,20 @@ export default function ProfilePage() {
 
     try {
       const profile: BusinessProfile = {
-        businessName: '',
-        representative: '',
-        registrationNumber: formatRegNumber(regNumber),
-        businessType: '',
-        businessCategory: '',
-        address: '',
-        phone,
+        ...form,
+        registrationNumber: formatRegNumber(form.registrationNumber),
         registeredAt: new Date().toISOString(),
       };
-      console.log('[등록] 프로필 저장 시작:', profile.registrationNumber, 'uid:', uid);
       await setProfile(profile);
-      console.log('[등록] 저장 완료, 상품화면으로 이동');
       navigate('/');
     } catch (err) {
-      console.error('[등록] 에러:', err);
       setError(getErrorMessage(err, '등록에 실패했습니다.'));
     } finally {
       setIsSaving(false);
     }
   };
 
-  const canRegister = regNumber.trim() && phone.trim() && !isOcr && !isSaving;
+  const canRegister = form.registrationNumber.trim() && form.phone.trim() && !isOcr && !isSaving;
 
   return (
     <Container maxWidth="sm" sx={{ py: 4 }}>
@@ -158,8 +162,8 @@ export default function ProfilePage() {
             <TextField
               label="사업자등록번호"
               placeholder="000-00-00000"
-              value={regNumber}
-              onChange={(e) => setRegNumber(e.target.value)}
+              value={form.registrationNumber}
+              onChange={handleChange('registrationNumber')}
               fullWidth
               autoFocus
               onKeyDown={(e) => e.key === 'Enter' && handleCheck()}
@@ -170,7 +174,7 @@ export default function ProfilePage() {
               size="large"
               fullWidth
               onClick={handleCheck}
-              disabled={!regNumber.trim() || isChecking}
+              disabled={!form.registrationNumber.trim() || isChecking}
             >
               {isChecking ? '확인 중...' : '확인'}
             </Button>
@@ -179,14 +183,14 @@ export default function ProfilePage() {
         </>
       )}
 
-      {/* 등록 화면: 사업자등록증 + 전화번호 */}
+      {/* 등록 화면: 사업자등록증 + 전체 정보 */}
       {step === 'register' && (
         <>
           <Typography variant="h5" gutterBottom fontWeight={700}>
             신규 사업자 등록
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            사업자등록증을 업로드하고 전화번호를 입력해주세요.
+            사업자등록증을 업로드하면 정보가 자동으로 입력됩니다.
           </Typography>
 
           {/* 사업자등록증 업로드 */}
@@ -229,29 +233,57 @@ export default function ProfilePage() {
           {isOcr && (
             <Box sx={{ mb: 2 }}>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                텍스트 인식 중...
+                텍스트 인식 중... 아래 정보를 먼저 입력하셔도 됩니다.
               </Typography>
               <LinearProgress />
             </Box>
           )}
 
-          {/* 전화번호 + 등록 버튼 */}
+          {/* 전체 정보 폼 */}
           <Paper sx={{ p: 3 }}>
             <Box component="form" onSubmit={handleRegister} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <TextField
                 label="사업자등록번호"
-                value={regNumber}
-                onChange={(e) => setRegNumber(e.target.value)}
+                value={form.registrationNumber}
                 fullWidth
                 disabled
               />
               <TextField
+                label="상호명"
+                value={form.businessName}
+                onChange={handleChange('businessName')}
+                fullWidth
+              />
+              <TextField
+                label="대표자"
+                value={form.representative}
+                onChange={handleChange('representative')}
+                fullWidth
+              />
+              <TextField
+                label="업태"
+                value={form.businessType}
+                onChange={handleChange('businessType')}
+                fullWidth
+              />
+              <TextField
+                label="종목"
+                value={form.businessCategory}
+                onChange={handleChange('businessCategory')}
+                fullWidth
+              />
+              <TextField
+                label="사업장 소재지"
+                value={form.address}
+                onChange={handleChange('address')}
+                fullWidth
+              />
+              <TextField
                 label="전화번호 *"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                value={form.phone}
+                onChange={handleChange('phone')}
                 placeholder="010-0000-0000"
                 fullWidth
-                autoFocus
                 helperText="연락 가능한 전화번호를 입력하세요"
               />
               <Button
