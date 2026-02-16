@@ -24,20 +24,27 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let signingOut = false;
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (signingOut) return; // signOut 중 재호출 방지
+
       if (firebaseUser && !firebaseUser.isAnonymous) {
-        // password provider로 로그인한 사용자만 관리자로 인정
         setAdminUser(firebaseUser);
         setIsAdmin(true);
-      } else {
-        // anonymous이거나 로그인 안 된 상태 → 로그인 폼 표시
-        if (firebaseUser?.isAnonymous) {
-          await signOut(auth);
-        }
+        setLoading(false);
+      } else if (firebaseUser?.isAnonymous) {
+        // anonymous 세션 정리 후 로그인 폼 표시
+        signingOut = true;
+        await signOut(auth);
+        signingOut = false;
         setAdminUser(null);
         setIsAdmin(false);
+        setLoading(false);
+      } else {
+        setAdminUser(null);
+        setIsAdmin(false);
+        setLoading(false);
       }
-      setLoading(false);
     });
     return unsubscribe;
   }, []);
