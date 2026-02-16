@@ -53,6 +53,8 @@ export async function extractBusinessInfo(
   });
 
   if (!res.ok) {
+    const errorBody = await res.text().catch(() => '');
+    console.error('Anthropic API 에러:', res.status, errorBody);
     if (res.status === 401 || res.status === 403) {
       throw new Error('OCR API 인증에 실패했습니다. API 키를 확인하세요.');
     }
