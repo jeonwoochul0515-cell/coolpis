@@ -16,19 +16,6 @@ export const onRequest: PagesFunction<{ ANTHROPIC_API_KEY: string }> = async (co
   }
 
   const path = (params.path as string[]).join('/');
-
-  // 디버깅: 환경변수 확인 (임시)
-  if (path === 'debug') {
-    const key = env.ANTHROPIC_API_KEY ?? '(undefined)';
-    return new Response(JSON.stringify({
-      keyExists: !!env.ANTHROPIC_API_KEY,
-      keyPrefix: key.slice(0, 10) + '...',
-      keyLength: key.length,
-    }), {
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-    });
-  }
-
   const targetUrl = `https://api.anthropic.com/${path}`;
 
   const headers = new Headers();
