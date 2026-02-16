@@ -8,9 +8,10 @@ interface Props {
   totalItems: number;
   totalPrice: number;
   onSubmitOrder: () => void;
+  disabled?: boolean;
 }
 
-export default function CartSummary({ totalItems, totalPrice, onSubmitOrder }: Props) {
+export default function CartSummary({ totalItems, totalPrice, onSubmitOrder, disabled }: Props) {
   return (
     <Paper sx={{ p: 3, mt: 2 }}>
       <Typography variant="h6" gutterBottom fontWeight={600}>
@@ -32,7 +33,7 @@ export default function CartSummary({ totalItems, totalPrice, onSubmitOrder }: P
         size="large"
         fullWidth
         onClick={onSubmitOrder}
-        disabled={totalItems === 0}
+        disabled={totalItems === 0 || disabled}
       >
         주문 제출
       </Button>

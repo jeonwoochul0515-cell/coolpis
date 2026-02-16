@@ -7,6 +7,7 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import StorefrontIcon from '@mui/icons-material/Storefront';
+import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import PersonIcon from '@mui/icons-material/Person';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
@@ -40,6 +41,9 @@ export default function Header() {
                 <Badge badgeContent={totalItems} color="error">
                   <ShoppingCartIcon />
                 </Badge>
+              </IconButton>
+              <IconButton color="inherit" onClick={() => navigate('/orders')} title="주문내역">
+                <ReceiptLongIcon />
               </IconButton>
             </>
           )}

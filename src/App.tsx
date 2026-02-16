@@ -10,6 +10,8 @@ import Header from './components/Header';
 import ProductListPage from './pages/ProductListPage';
 import CartPage from './pages/CartPage';
 import ProfilePage from './pages/ProfilePage';
+import OrderCompletePage from './pages/OrderCompletePage';
+import OrderHistoryPage from './pages/OrderHistoryPage';
 
 const theme = createTheme({
   palette: {
@@ -42,6 +44,14 @@ function AppRoutes() {
       <Route
         path="/cart"
         element={isRegistered ? <CartPage /> : <Navigate to="/profile" replace />}
+      />
+      <Route
+        path="/order-complete"
+        element={isRegistered ? <OrderCompletePage /> : <Navigate to="/profile" replace />}
+      />
+      <Route
+        path="/orders"
+        element={isRegistered ? <OrderHistoryPage /> : <Navigate to="/profile" replace />}
       />
     </Routes>
   );

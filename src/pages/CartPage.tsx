@@ -9,17 +9,30 @@ import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import CartItemComponent from '../components/CartItem';
 import CartSummary from '../components/CartSummary';
 import { useCart } from '../context/CartContext';
+import { useProfile } from '../context/ProfileContext';
 import { useNavigate } from 'react-router-dom';
+import { saveOrder } from '../services/orderStore';
 
 export default function CartPage() {
   const { items, updateQuantity, removeFromCart, clearCart, totalItems, totalPrice } = useCart();
+  const { uid, profile } = useProfile();
   const navigate = useNavigate();
-  const [snackbar, setSnackbar] = useState({ open: false, message: '' });
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmitOrder = () => {
-    console.log('주문 제출:', { items, totalItems, totalPrice });
-    setSnackbar({ open: true, message: '주문이 성공적으로 제출되었습니다!' });
-    clearCart();
+  const handleSubmitOrder = async () => {
+    if (!uid || !profile) return;
+    setSubmitting(true);
+    try {
+      await saveOrder(uid, profile, items, totalItems, totalPrice);
+      clearCart();
+      navigate('/order-complete');
+    } catch (err) {
+      console.error('주문 실패:', err);
+      setSnackbar({ open: true, message: '주문에 실패했습니다. 다시 시도해주세요.', severity: 'error' });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (items.length === 0) {
@@ -38,10 +51,10 @@ export default function CartPage() {
         <Snackbar
           open={snackbar.open}
           autoHideDuration={3000}
-          onClose={() => setSnackbar({ open: false, message: '' })}
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
         >
-          <Alert severity="success" variant="filled">
+          <Alert severity={snackbar.severity} variant="filled">
             {snackbar.message}
           </Alert>
         </Snackbar>
@@ -68,14 +81,15 @@ export default function CartPage() {
         totalItems={totalItems}
         totalPrice={totalPrice}
         onSubmitOrder={handleSubmitOrder}
+        disabled={submitting}
       />
       <Snackbar
         open={snackbar.open}
         autoHideDuration={3000}
-        onClose={() => setSnackbar({ open: false, message: '' })}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
-        <Alert severity="success" variant="filled">
+        <Alert severity={snackbar.severity} variant="filled">
           {snackbar.message}
         </Alert>
       </Snackbar>
