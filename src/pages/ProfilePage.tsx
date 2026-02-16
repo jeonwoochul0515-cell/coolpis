@@ -16,7 +16,9 @@ import EditIcon from '@mui/icons-material/Edit';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import LogoutIcon from '@mui/icons-material/Logout';
 import { useProfile } from '../context/ProfileContext';
+import { useAuth } from '../context/AuthContext';
 import { fileToDataUrl, runOcr, parseBusinessRegistration } from '../services/ocr';
 import { findProfileByRegNumber, saveProfile } from '../services/profileStore';
 import { useNavigate } from 'react-router-dom';
@@ -26,7 +28,8 @@ import { getErrorMessage } from '../utils/errorMessage';
 type Step = 'input-reg-number' | 'register' | 'view';
 
 export default function ProfilePage() {
-  const { setProfile, uid, profile, isRegistered } = useProfile();
+  const { setProfile, uid, profile, isRegistered, clearProfile } = useProfile();
+  const { logout } = useAuth();
   const navigate = useNavigate();
 
   const [step, setStep] = useState<Step>(isRegistered ? 'view' : 'input-reg-number');
@@ -460,9 +463,20 @@ export default function ProfilePage() {
           </Paper>
 
           {!isEditing && (
-            <Box sx={{ textAlign: 'center', mt: 3 }}>
+            <Box sx={{ textAlign: 'center', mt: 3, display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center' }}>
               <Button variant="contained" size="large" onClick={() => navigate('/')}>
                 제품 목록으로 이동
+              </Button>
+              <Button
+                variant="text"
+                color="error"
+                startIcon={<LogoutIcon />}
+                onClick={async () => {
+                  clearProfile();
+                  await logout();
+                }}
+              >
+                로그아웃
               </Button>
             </Box>
           )}

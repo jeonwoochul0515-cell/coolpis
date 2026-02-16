@@ -1,14 +1,15 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { signInAnonymously, onAuthStateChanged, type User } from 'firebase/auth';
+import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
+import { signInAnonymously, onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { auth } from '../firebase';
 
 interface AuthContextType {
   user: User | null;
   uid: string | null;
   loading: boolean;
+  logout: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType>({ user: null, uid: null, loading: true });
+const AuthContext = createContext<AuthContextType>({ user: null, uid: null, loading: true, logout: async () => {} });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -33,8 +34,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, []);
 
+  const logout = useCallback(async () => {
+    await signOut(auth);
+    // onAuthStateChanged가 자동으로 다시 익명 로그인 처리
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, uid: user?.uid ?? null, loading }}>
+    <AuthContext.Provider value={{ user, uid: user?.uid ?? null, loading, logout }}>
       {children}
     </AuthContext.Provider>
   );
