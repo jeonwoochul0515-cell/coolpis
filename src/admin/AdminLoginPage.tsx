@@ -21,8 +21,16 @@ export default function AdminLoginPage() {
     setLoading(true);
     try {
       await login(email, password);
-    } catch {
-      setError('이메일 또는 비밀번호가 올바르지 않습니다.');
+    } catch (err: unknown) {
+      const code = (err as { code?: string }).code ?? '';
+      console.error('로그인 실패:', code, err);
+      if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
+        setError('이메일 또는 비밀번호가 올바르지 않습니다.');
+      } else if (code === 'auth/too-many-requests') {
+        setError('로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요.');
+      } else {
+        setError(`로그인 실패: ${code || (err as Error).message}`);
+      }
     } finally {
       setLoading(false);
     }
