@@ -6,6 +6,9 @@ import Box from '@mui/material/Box';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { ProfileProvider, useProfile } from './context/ProfileContext';
+import { AdminAuthProvider, useAdminAuth } from './admin/AdminAuthContext';
+import AdminLoginPage from './admin/AdminLoginPage';
+import AdminDashboard from './admin/AdminDashboard';
 import Header from './components/Header';
 import ProductListPage from './pages/ProductListPage';
 import CartPage from './pages/CartPage';
@@ -71,20 +74,48 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function AdminApp() {
+  const { isAdmin, loading } = useAdminAuth();
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  return isAdmin ? <AdminDashboard /> : <AdminLoginPage />;
+}
+
+function RegularApp() {
+  return (
+    <AuthProvider>
+      <AuthGate>
+        <ProfileProvider>
+          <CartProvider>
+            <Header />
+            <AppRoutes />
+          </CartProvider>
+        </ProfileProvider>
+      </AuthGate>
+    </AuthProvider>
+  );
+}
+
 function App() {
+  const isAdminRoute = window.location.pathname.startsWith('/admin');
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <AuthProvider>
-        <AuthGate>
-          <ProfileProvider>
-            <CartProvider>
-              <Header />
-              <AppRoutes />
-            </CartProvider>
-          </ProfileProvider>
-        </AuthGate>
-      </AuthProvider>
+      {isAdminRoute ? (
+        <AdminAuthProvider>
+          <AdminApp />
+        </AdminAuthProvider>
+      ) : (
+        <RegularApp />
+      )}
     </ThemeProvider>
   );
 }
