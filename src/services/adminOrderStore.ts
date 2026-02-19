@@ -42,6 +42,18 @@ export async function assignToVehicle(
   });
 }
 
+/** 주문 상태 일괄 업데이트 */
+export async function batchUpdateStatus(
+  orderIds: string[],
+  status: string
+): Promise<void> {
+  const batch = writeBatch(db);
+  for (const orderId of orderIds) {
+    batch.update(doc(db, ORDERS_COLLECTION, orderId), { status });
+  }
+  await batch.commit();
+}
+
 /** 순서 일괄 업데이트 */
 export async function batchUpdateSequences(
   updates: { orderId: string; sequence: number }[]

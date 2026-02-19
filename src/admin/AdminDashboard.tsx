@@ -32,11 +32,15 @@ import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import { useAdminAuth } from './AdminAuthContext';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import VisibilityIcon from '@mui/icons-material/Visibility';
 import {
   getAllOrders,
   updateOrderStatus,
   assignToVehicle,
   batchUpdateSequences,
+  batchUpdateStatus,
 } from '../services/adminOrderStore';
 import { getAllPayments, addPayment, deletePayment } from '../services/paymentStore';
 import type { Order, DeliveryVehicle } from '../types/order';
@@ -288,6 +292,7 @@ export default function AdminDashboard() {
   const [loadingListVehicle, setLoadingListVehicle] = useState<DeliveryVehicle | null>(null);
   const [vehicleCountDialogOpen, setVehicleCountDialogOpen] = useState(false);
   const [vehicleCount, setVehicleCount] = useState<string>('2');
+  const [hideDelivered, setHideDelivered] = useState(true);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -317,6 +322,27 @@ export default function AdminDashboard() {
       );
     } catch (err) {
       console.error('상태 변경 실패:', err);
+    }
+  };
+
+  const handleConfirmAll = async () => {
+    const pendingOrders = orders.filter((o) => o.status === 'pending');
+    if (pendingOrders.length === 0) return;
+
+    try {
+      await batchUpdateStatus(
+        pendingOrders.map((o) => o.id),
+        'confirmed'
+      );
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.status === 'pending' ? { ...o, status: 'confirmed' as const } : o
+        )
+      );
+      setAiSuccess(`${pendingOrders.length}건 전체 주문확인 완료`);
+    } catch (err) {
+      console.error('전체 주문확인 실패:', err);
+      setAiError('전체 주문확인에 실패했습니다.');
     }
   };
 
@@ -567,19 +593,29 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
   ];
 
   const getFilteredOrders = () => {
+    let result: Order[];
     switch (filter) {
       case 'all':
-        return orders;
+        result = orders;
+        break;
       case 'unassigned':
-        return orders.filter((o) => !o.deliveryVehicle);
+        result = orders.filter((o) => !o.deliveryVehicle);
+        break;
       default:
-        return orders
+        result = orders
           .filter((o) => o.deliveryVehicle === filter)
           .sort((a, b) => (a.deliverySequence ?? 0) - (b.deliverySequence ?? 0));
+        break;
     }
+    if (hideDelivered) {
+      result = result.filter((o) => o.status !== 'delivered');
+    }
+    return result;
   };
 
   const filteredOrders = getFilteredOrders();
+  const pendingCount = orders.filter((o) => o.status === 'pending').length;
+  const deliveredCount = orders.filter((o) => o.status === 'delivered').length;
 
   const formatDate = (iso: string) => {
     const d = new Date(iso);
@@ -626,7 +662,17 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
           })}
         </Tabs>
 
-        <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+          {pendingCount > 0 && (
+            <Button
+              variant="contained"
+              color="info"
+              startIcon={<CheckCircleOutlineIcon />}
+              onClick={handleConfirmAll}
+            >
+              전체 주문확인 ({pendingCount}건)
+            </Button>
+          )}
           {orders.filter((o) => !o.deliveryVehicle).length > 0 && (
             <Button
               variant="contained"
@@ -648,6 +694,17 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
               {v} 상차리스트
             </Button>
           ))}
+          {deliveredCount > 0 && (
+            <Button
+              variant="text"
+              size="small"
+              startIcon={hideDelivered ? <VisibilityOffIcon /> : <VisibilityIcon />}
+              onClick={() => setHideDelivered((prev) => !prev)}
+              sx={{ ml: 'auto' }}
+            >
+              {hideDelivered ? `배송완료 숨김 (${deliveredCount}건)` : '배송완료 표시 중'}
+            </Button>
+          )}
         </Box>
 
         {loading ? (
