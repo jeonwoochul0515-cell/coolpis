@@ -16,10 +16,13 @@ import Stack from '@mui/material/Stack';
 import IconButton from '@mui/material/IconButton';
 import TextField from '@mui/material/TextField';
 import Divider from '@mui/material/Divider';
+import Alert from '@mui/material/Alert';
+import Snackbar from '@mui/material/Snackbar';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import DeleteIcon from '@mui/icons-material/Delete';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
 import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
@@ -269,6 +272,9 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<TabFilter>('all');
   const [dateRange, setDateRange] = useState(getDefaultDateRange);
+  const [aiDispatching, setAiDispatching] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiSuccess, setAiSuccess] = useState<string | null>(null);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -424,6 +430,89 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleAIDispatch = async () => {
+    const unassigned = orders.filter((o) => !o.deliveryVehicle);
+    if (unassigned.length === 0) return;
+
+    setAiDispatching(true);
+    setAiError(null);
+
+    try {
+      const orderSummary = unassigned.map((o) => ({
+        orderId: o.id,
+        businessName: o.businessName,
+        address: o.address,
+        items: o.items.map((i) => `${i.productName} x${i.quantity}`).join(', '),
+        totalPrice: o.totalPrice,
+        createdAt: o.createdAt,
+      }));
+
+      const res = await fetch('/api/anthropic/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 2048,
+          messages: [
+            {
+              role: 'user',
+              content: `당신은 배송 최적화 전문가입니다. 아래 주문 목록을 배송차 3대(배송차1, 배송차2, 배송차3)에 배정하고, 각 차량 내 배송 순서를 최적화해주세요.
+
+배송 시작/종료 지점: 부산광역시 사상구 하신번영로 440
+
+최적화 기준:
+- 주소 기반 지역 근접성 (같은 구/동 묶기)
+- 차량별 물량 균형
+- 출발지에서 가까운 순서로 배송 순서 설정
+
+주문 목록:
+${JSON.stringify(orderSummary, null, 2)}
+
+반드시 아래 JSON 형식만 반환하세요 (다른 텍스트 없이):
+[{ "orderId": "...", "vehicle": "배송차1", "sequence": 1 }]`,
+            },
+          ],
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error('AI 배차 요청에 실패했습니다.');
+      }
+
+      const data = await res.json();
+      const text: string = data.content?.[0]?.text ?? '';
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) {
+        throw new Error('AI 응답을 파싱할 수 없습니다.');
+      }
+
+      const assignments: { orderId: string; vehicle: DeliveryVehicle; sequence: number }[] =
+        JSON.parse(jsonMatch[0]);
+
+      // 배정 적용
+      for (const a of assignments) {
+        await assignToVehicle(a.orderId, a.vehicle, a.sequence);
+      }
+
+      // 로컬 상태 업데이트
+      setOrders((prev) =>
+        prev.map((o) => {
+          const match = assignments.find((a) => a.orderId === o.id);
+          if (match) {
+            return { ...o, deliveryVehicle: match.vehicle, deliverySequence: match.sequence };
+          }
+          return o;
+        })
+      );
+
+      setAiSuccess(`${assignments.length}건 AI 배차 완료`);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'AI 배차 중 오류가 발생했습니다.');
+    } finally {
+      setAiDispatching(false);
+    }
+  };
+
   const getFilteredOrders = () => {
     switch (filter) {
       case 'all':
@@ -483,6 +572,20 @@ export default function AdminDashboard() {
             return <Tab key={t.value} label={`${t.label} (${count})`} />;
           })}
         </Tabs>
+
+        {orders.filter((o) => !o.deliveryVehicle).length > 0 && (
+          <Box sx={{ mb: 2 }}>
+            <Button
+              variant="contained"
+              color="secondary"
+              startIcon={aiDispatching ? <CircularProgress size={18} color="inherit" /> : <SmartToyIcon />}
+              onClick={handleAIDispatch}
+              disabled={aiDispatching}
+            >
+              {aiDispatching ? 'AI 배차 중...' : `AI 배차 (미배정 ${orders.filter((o) => !o.deliveryVehicle).length}건)`}
+            </Button>
+          </Box>
+        )}
 
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
@@ -646,6 +749,15 @@ export default function AdminDashboard() {
           </Stack>
         )}
       </Container>
+
+      <Snackbar open={!!aiSuccess} autoHideDuration={3000} onClose={() => setAiSuccess(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+        <Alert severity="success" variant="filled" onClose={() => setAiSuccess(null)}>{aiSuccess}</Alert>
+      </Snackbar>
+      <Snackbar open={!!aiError} autoHideDuration={5000} onClose={() => setAiError(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+        <Alert severity="error" variant="filled" onClose={() => setAiError(null)}>{aiError}</Alert>
+      </Snackbar>
     </Box>
   );
 }
