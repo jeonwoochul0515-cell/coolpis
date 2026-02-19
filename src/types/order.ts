@@ -6,7 +6,7 @@ export interface OrderItem {
   quantity: number;
 }
 
-export type DeliveryVehicle = '배송차1' | '배송차2' | '배송차3';
+export type DeliveryVehicle = string;
 
 export interface Order {
   id: string;

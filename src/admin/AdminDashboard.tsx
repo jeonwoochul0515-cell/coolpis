@@ -42,7 +42,7 @@ import { getAllPayments, addPayment, deletePayment } from '../services/paymentSt
 import type { Order, DeliveryVehicle } from '../types/order';
 import type { Payment } from '../types/payment';
 
-type TabFilter = 'all' | 'unassigned' | '배송차1' | '배송차2' | '배송차3' | 'byBusiness';
+type TabFilter = string; // 'all' | 'unassigned' | '배송차N' | 'byBusiness'
 
 const STATUS_LABELS: Record<Order['status'], string> = {
   pending: '접수대기',
@@ -56,16 +56,21 @@ const STATUS_COLORS: Record<Order['status'], 'warning' | 'info' | 'success'> = {
   delivered: 'success',
 };
 
-const TAB_FILTERS: { label: string; value: TabFilter }[] = [
-  { label: '전체', value: 'all' },
-  { label: '미배정', value: 'unassigned' },
-  { label: '배송차1', value: '배송차1' },
-  { label: '배송차2', value: '배송차2' },
-  { label: '배송차3', value: '배송차3' },
-  { label: '사업자별', value: 'byBusiness' },
-];
+function getActiveVehicles(orders: Order[]): DeliveryVehicle[] {
+  const vehicles = new Set<string>();
+  for (const o of orders) {
+    if (o.deliveryVehicle) vehicles.add(o.deliveryVehicle);
+  }
+  return Array.from(vehicles).sort((a, b) => {
+    const numA = parseInt(a.replace(/\D/g, '')) || 0;
+    const numB = parseInt(b.replace(/\D/g, '')) || 0;
+    return numA - numB;
+  });
+}
 
-const VEHICLES: DeliveryVehicle[] = ['배송차1', '배송차2', '배송차3'];
+function generateVehicleNames(count: number): DeliveryVehicle[] {
+  return Array.from({ length: count }, (_, i) => `배송차${i + 1}`);
+}
 
 function BusinessGroupView({
   orders,
@@ -281,6 +286,8 @@ export default function AdminDashboard() {
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiSuccess, setAiSuccess] = useState<string | null>(null);
   const [loadingListVehicle, setLoadingListVehicle] = useState<DeliveryVehicle | null>(null);
+  const [vehicleCountDialogOpen, setVehicleCountDialogOpen] = useState(false);
+  const [vehicleCount, setVehicleCount] = useState<string>('2');
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -436,7 +443,14 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleAIDispatch = async () => {
+  const handleAIDispatchClick = () => {
+    const unassigned = orders.filter((o) => !o.deliveryVehicle);
+    if (unassigned.length === 0) return;
+    setVehicleCount('2');
+    setVehicleCountDialogOpen(true);
+  };
+
+  const handleAIDispatch = async (numVehicles: number) => {
     const unassigned = orders.filter((o) => !o.deliveryVehicle);
     if (unassigned.length === 0) return;
 
@@ -453,37 +467,53 @@ export default function AdminDashboard() {
         createdAt: o.createdAt,
       }));
 
+      const vehicleNames = generateVehicleNames(numVehicles);
+      const vehicleList = vehicleNames.join(', ');
+
       const res = await fetch('/api/anthropic/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'claude-haiku-4-5-20251001',
-          max_tokens: 2048,
+          max_tokens: 4096,
           messages: [
             {
               role: 'user',
-              content: `당신은 부산광역시 배송 경로 최적화 전문가입니다.
+              content: `당신은 부산광역시에서 10년간 배송코스를 전담해온 유통 전문가입니다.
+부산 전 지역의 도로 사정, 교통 흐름, 지역 특성을 완벽하게 파악하고 있습니다.
 
 ## 작업
-아래 주문들을 배송차 3대(배송차1, 배송차2, 배송차3)에 배정하고, 각 차량의 배송 순서를 최적 경로로 설정하세요.
+아래 주문들을 배송차 ${numVehicles}대(${vehicleList})에 배정하고, 각 차량의 배송 순서를 최적 경로로 설정하세요.
 
 ## 출발지/복귀지
 부산광역시 사상구 하신번영로 440 (모든 차량 동일)
 
-## 배차 규칙
-1. 지역 근접성: 같은 구/인접 구를 같은 차량에 묶기
-   - 예: 해운대구+수영구+기장군 = 한 차량, 중구+동구+영도구 = 한 차량, 사상구+북구+사하구 = 한 차량
-2. 차량별 물량 균형: 주문 수를 최대한 균등 배분
-3. 배송 순서: 출발지(사상구)에서 출발하여 가장 가까운 곳부터 순서대로 방문하고 다시 출발지로 돌아오는 최단 경로 (TSP)
+## 배차 규칙 (10년 경력 기반)
+1. **지역 클러스터링**: 같은 구/인접 구를 같은 차량에 묶되, 부산 지형 특성을 반영
+   - 해안 라인: 해운대구↔수영구↔남구↔영도구 (해안도로 연결)
+   - 내륙 라인: 사상구↔북구↔강서구↔사하구 (낙동강 서쪽)
+   - 도심 라인: 중구↔동구↔부산진구↔연제구 (도심 연결)
+   - 동부 라인: 해운대구↔기장군↔금정구 (반송~기장 연결)
+   - 서부 라인: 사하구↔강서구↔북구 (을숙도~덕천 연결)
+   - 금정/동래 라인: 금정구↔동래구↔연제구 (온천장~거제 연결)
+2. **차량별 물량 균형**: 주문 수를 최대한 균등 배분 (차이 1건 이내)
+3. **배송 순서 최적화**: 출발지(사상구 하신번영로)에서 출발하여 교통 흐름과 실제 도로 연결을 고려한 최적 경로
+   - 사상구에서 가까운 곳: 북구, 강서구, 사하구 (10~15분)
+   - 사상구에서 중간 거리: 부산진구, 동구, 중구, 연제구, 동래구 (20~30분)
+   - 사상구에서 먼 곳: 해운대구, 수영구, 남구, 기장군, 금정구, 영도구 (30~50분)
    - sequence 1 = 출발지에서 가장 먼저 방문하는 곳
    - 마지막 sequence = 출발지로 돌아오기 직전 마지막 방문지
+4. **실전 노하우**:
+   - 같은 건물/같은 상가 내 여러 주문은 반드시 같은 차량, 연속 순서로 배정
+   - 주소가 같은 구인데 떨어진 동이면 다른 차량도 가능
 
 ## 주문 목록
 ${JSON.stringify(orderSummary, null, 2)}
 
 ## 응답 형식
 반드시 JSON 배열만 반환하세요. 다른 텍스트, 설명, 마크다운 없이 순수 JSON만:
-[{"orderId":"...","vehicle":"배송차1","sequence":1}]`,
+[{"orderId":"...","vehicle":"배송차1","sequence":1}]
+vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
             },
           ],
         }),
@@ -519,13 +549,22 @@ ${JSON.stringify(orderSummary, null, 2)}
         })
       );
 
-      setAiSuccess(`${assignments.length}건 AI 배차 완료`);
+      setAiSuccess(`${numVehicles}대 차량, ${assignments.length}건 AI 배차 완료`);
     } catch (err) {
       setAiError(err instanceof Error ? err.message : 'AI 배차 중 오류가 발생했습니다.');
     } finally {
       setAiDispatching(false);
     }
   };
+
+  const activeVehicles = getActiveVehicles(orders);
+
+  const tabFilters: { label: string; value: TabFilter }[] = [
+    { label: '전체', value: 'all' },
+    { label: '미배정', value: 'unassigned' },
+    ...activeVehicles.map((v) => ({ label: v, value: v })),
+    { label: '사업자별', value: 'byBusiness' },
+  ];
 
   const getFilteredOrders = () => {
     switch (filter) {
@@ -562,13 +601,13 @@ ${JSON.stringify(orderSummary, null, 2)}
 
       <Container maxWidth="lg" sx={{ mt: 3 }}>
         <Tabs
-          value={TAB_FILTERS.findIndex((t) => t.value === filter)}
-          onChange={(_, idx) => setFilter(TAB_FILTERS[idx].value)}
+          value={Math.max(0, tabFilters.findIndex((t) => t.value === filter))}
+          onChange={(_, idx) => setFilter(tabFilters[idx]?.value ?? 'all')}
           sx={{ mb: 2 }}
           variant="scrollable"
           scrollButtons="auto"
         >
-          {TAB_FILTERS.map((t) => {
+          {tabFilters.map((t) => {
             let count: number;
             if (t.value === 'all') {
               count = orders.length;
@@ -593,25 +632,22 @@ ${JSON.stringify(orderSummary, null, 2)}
               variant="contained"
               color="secondary"
               startIcon={aiDispatching ? <CircularProgress size={18} color="inherit" /> : <SmartToyIcon />}
-              onClick={handleAIDispatch}
+              onClick={handleAIDispatchClick}
               disabled={aiDispatching}
             >
               {aiDispatching ? 'AI 배차 중...' : `AI 배차 (미배정 ${orders.filter((o) => !o.deliveryVehicle).length}건)`}
             </Button>
           )}
-          {VEHICLES.map((v) => {
-            const vOrders = orders.filter((o) => o.deliveryVehicle === v);
-            return vOrders.length > 0 ? (
-              <Button
-                key={v}
-                variant="outlined"
-                startIcon={<LocalShippingIcon />}
-                onClick={() => setLoadingListVehicle(v)}
-              >
-                {v} 상차리스트
-              </Button>
-            ) : null;
-          })}
+          {activeVehicles.map((v) => (
+            <Button
+              key={v}
+              variant="outlined"
+              startIcon={<LocalShippingIcon />}
+              onClick={() => setLoadingListVehicle(v)}
+            >
+              {v} 상차리스트
+            </Button>
+          ))}
         </Box>
 
         {loading ? (
@@ -721,7 +757,7 @@ ${JSON.stringify(orderSummary, null, 2)}
                     {/* Assign buttons (for unassigned orders) */}
                     {!order.deliveryVehicle && (
                       <>
-                        {VEHICLES.map((v) => (
+                        {(activeVehicles.length > 0 ? activeVehicles : generateVehicleNames(3)).map((v) => (
                           <Button
                             key={v}
                             size="small"
@@ -776,6 +812,45 @@ ${JSON.stringify(orderSummary, null, 2)}
           </Stack>
         )}
       </Container>
+
+      {/* 차량 대수 선택 다이얼로그 */}
+      <Dialog
+        open={vehicleCountDialogOpen}
+        onClose={() => setVehicleCountDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>
+          AI 배차 - 차량 대수 선택
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            미배정 {orders.filter((o) => !o.deliveryVehicle).length}건을 몇 대의 차량에 배정할까요?
+          </Typography>
+          <TextField
+            type="number"
+            label="차량 대수"
+            value={vehicleCount}
+            onChange={(e) => setVehicleCount(e.target.value)}
+            fullWidth
+            inputProps={{ min: 1, max: 10 }}
+            helperText="1~10대 사이로 입력하세요"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setVehicleCountDialogOpen(false)}>취소</Button>
+          <Button
+            variant="contained"
+            disabled={!vehicleCount || Number(vehicleCount) < 1 || Number(vehicleCount) > 10}
+            onClick={() => {
+              setVehicleCountDialogOpen(false);
+              handleAIDispatch(Number(vehicleCount));
+            }}
+          >
+            배차 시작
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* 상차리스트 다이얼로그 */}
       <Dialog
