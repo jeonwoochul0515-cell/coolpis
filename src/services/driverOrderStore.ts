@@ -5,7 +5,6 @@ import {
   updateDoc,
   query,
   where,
-  orderBy,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { Order } from '../types/order';
@@ -16,11 +15,12 @@ const ORDERS_COLLECTION = 'orders';
 export async function getOrdersByVehicle(vehicle: string): Promise<Order[]> {
   const q = query(
     collection(db, ORDERS_COLLECTION),
-    where('deliveryVehicle', '==', vehicle),
-    orderBy('deliverySequence', 'asc')
+    where('deliveryVehicle', '==', vehicle)
   );
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Order));
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() } as Order))
+    .sort((a, b) => (a.deliverySequence ?? 0) - (b.deliverySequence ?? 0));
 }
 
 /** 주문 배송완료 처리 */
