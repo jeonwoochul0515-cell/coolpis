@@ -3,6 +3,7 @@ import {
   getDocs,
   doc,
   updateDoc,
+  deleteDoc,
   writeBatch,
   orderBy,
   query,
@@ -52,6 +53,23 @@ export async function batchUpdateStatus(
     batch.update(doc(db, ORDERS_COLLECTION, orderId), { status });
   }
   await batch.commit();
+}
+
+/** 배차 일괄 초기화 */
+export async function batchResetDispatch(orderIds: string[]): Promise<void> {
+  const batch = writeBatch(db);
+  for (const orderId of orderIds) {
+    batch.update(doc(db, ORDERS_COLLECTION, orderId), {
+      deliveryVehicle: null,
+      deliverySequence: 0,
+    });
+  }
+  await batch.commit();
+}
+
+/** 주문 삭제 */
+export async function deleteOrder(orderId: string): Promise<void> {
+  await deleteDoc(doc(db, ORDERS_COLLECTION, orderId));
 }
 
 /** 순서 일괄 업데이트 */

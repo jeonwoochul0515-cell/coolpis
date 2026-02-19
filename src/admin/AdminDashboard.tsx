@@ -35,12 +35,16 @@ import { useAdminAuth } from './AdminAuthContext';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
+import DoneAllIcon from '@mui/icons-material/DoneAll';
 import {
   getAllOrders,
   updateOrderStatus,
   assignToVehicle,
   batchUpdateSequences,
   batchUpdateStatus,
+  batchResetDispatch,
+  deleteOrder,
 } from '../services/adminOrderStore';
 import { getAllPayments, addPayment, deletePayment } from '../services/paymentStore';
 import type { Order, DeliveryVehicle } from '../types/order';
@@ -293,6 +297,12 @@ export default function AdminDashboard() {
   const [vehicleCountDialogOpen, setVehicleCountDialogOpen] = useState(false);
   const [vehicleCount, setVehicleCount] = useState<string>('2');
   const [hideDelivered, setHideDelivered] = useState(true);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ open: false, title: '', message: '', onConfirm: () => {} });
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -344,6 +354,81 @@ export default function AdminDashboard() {
       console.error('전체 주문확인 실패:', err);
       setAiError('전체 주문확인에 실패했습니다.');
     }
+  };
+
+  const handleResetAllDispatch = () => {
+    const assignedOrders = orders.filter((o) => o.deliveryVehicle);
+    if (assignedOrders.length === 0) return;
+    setConfirmDialog({
+      open: true,
+      title: '배차 전체 초기화',
+      message: `${assignedOrders.length}건의 배차를 모두 초기화하시겠습니까?\n모든 차량 배정과 순서가 해제됩니다.`,
+      onConfirm: async () => {
+        try {
+          await batchResetDispatch(assignedOrders.map((o) => o.id));
+          setOrders((prev) =>
+            prev.map((o) =>
+              o.deliveryVehicle
+                ? { ...o, deliveryVehicle: null, deliverySequence: 0 }
+                : o
+            )
+          );
+          setAiSuccess(`${assignedOrders.length}건 배차 초기화 완료`);
+        } catch (err) {
+          console.error('배차 초기화 실패:', err);
+          setAiError('배차 초기화에 실패했습니다.');
+        }
+      },
+    });
+  };
+
+  const handleVehicleDeliverAll = (vehicle: DeliveryVehicle) => {
+    const vehicleOrders = orders.filter(
+      (o) => o.deliveryVehicle === vehicle && o.status !== 'delivered'
+    );
+    if (vehicleOrders.length === 0) return;
+    setConfirmDialog({
+      open: true,
+      title: `${vehicle} 전체 배송완료`,
+      message: `${vehicle}에 배정된 ${vehicleOrders.length}건을 모두 배송완료 처리하시겠습니까?`,
+      onConfirm: async () => {
+        try {
+          await batchUpdateStatus(
+            vehicleOrders.map((o) => o.id),
+            'delivered'
+          );
+          setOrders((prev) =>
+            prev.map((o) =>
+              o.deliveryVehicle === vehicle && o.status !== 'delivered'
+                ? { ...o, status: 'delivered' as const }
+                : o
+            )
+          );
+          setAiSuccess(`${vehicle} ${vehicleOrders.length}건 배송완료 처리`);
+        } catch (err) {
+          console.error('전체 배송완료 실패:', err);
+          setAiError('전체 배송완료 처리에 실패했습니다.');
+        }
+      },
+    });
+  };
+
+  const handleDeleteOrder = (orderId: string, businessName: string) => {
+    setConfirmDialog({
+      open: true,
+      title: '주문 삭제',
+      message: `"${businessName}" 주문을 삭제하시겠습니까?\n삭제된 주문은 복구할 수 없습니다.`,
+      onConfirm: async () => {
+        try {
+          await deleteOrder(orderId);
+          setOrders((prev) => prev.filter((o) => o.id !== orderId));
+          setAiSuccess('주문이 삭제되었습니다.');
+        } catch (err) {
+          console.error('주문 삭제 실패:', err);
+          setAiError('주문 삭제에 실패했습니다.');
+        }
+      },
+    });
   };
 
   const handleAssign = async (orderId: string, vehicle: DeliveryVehicle) => {
@@ -684,16 +769,43 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
               {aiDispatching ? 'AI 배차 중...' : `AI 배차 (미배정 ${orders.filter((o) => !o.deliveryVehicle).length}건)`}
             </Button>
           )}
-          {activeVehicles.map((v) => (
+          {activeVehicles.length > 0 && (
             <Button
-              key={v}
               variant="outlined"
-              startIcon={<LocalShippingIcon />}
-              onClick={() => setLoadingListVehicle(v)}
+              color="error"
+              startIcon={<RestartAltIcon />}
+              onClick={handleResetAllDispatch}
             >
-              {v} 상차리스트
+              배차 초기화
             </Button>
-          ))}
+          )}
+          {activeVehicles.map((v) => {
+            const vNotDelivered = orders.filter(
+              (o) => o.deliveryVehicle === v && o.status !== 'delivered'
+            ).length;
+            return (
+              <Box key={v} sx={{ display: 'inline-flex', gap: 0.5 }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<LocalShippingIcon />}
+                  onClick={() => setLoadingListVehicle(v)}
+                >
+                  {v} 상차리스트
+                </Button>
+                {vNotDelivered > 0 && (
+                  <Button
+                    variant="contained"
+                    color="success"
+                    size="small"
+                    startIcon={<DoneAllIcon />}
+                    onClick={() => handleVehicleDeliverAll(v)}
+                  >
+                    전체 배송완료
+                  </Button>
+                )}
+              </Box>
+            );
+          })}
           {deliveredCount > 0 && (
             <Button
               variant="text"
@@ -862,6 +974,14 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
                         </Button>
                       </>
                     )}
+                    <IconButton
+                      size="small"
+                      color="error"
+                      onClick={() => handleDeleteOrder(order.id, order.businessName)}
+                      sx={{ ml: 'auto' }}
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
                   </Box>
                 </CardContent>
               </Card>
@@ -869,6 +989,38 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
           </Stack>
         )}
       </Container>
+
+      {/* 확인 다이얼로그 */}
+      <Dialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog((prev) => ({ ...prev, open: false }))}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>
+          {confirmDialog.title}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ whiteSpace: 'pre-line' }}>
+            {confirmDialog.message}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDialog((prev) => ({ ...prev, open: false }))}>
+            취소
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={() => {
+              setConfirmDialog((prev) => ({ ...prev, open: false }));
+              confirmDialog.onConfirm();
+            }}
+          >
+            확인
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* 차량 대수 선택 다이얼로그 */}
       <Dialog
