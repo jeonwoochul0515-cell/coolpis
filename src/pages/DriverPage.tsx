@@ -21,7 +21,9 @@ import PhoneIcon from '@mui/icons-material/Phone';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import MapIcon from '@mui/icons-material/Map';
-import { getOrdersByVehicle, getActiveVehicles } from '../services/driverOrderStore';
+import DoneIcon from '@mui/icons-material/Done';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import { getOrdersByVehicle, getActiveVehicles, markOrderDelivered } from '../services/driverOrderStore';
 import type { Order } from '../types/order';
 
 function VehicleSelectScreen({
@@ -86,7 +88,16 @@ function VehicleSelectScreen({
   );
 }
 
-function DeliveryCard({ order, index }: { order: Order; index: number }) {
+function DeliveryCard({
+  order,
+  index,
+  onDelivered,
+}: {
+  order: Order;
+  index: number;
+  onDelivered: (orderId: string) => void;
+}) {
+  const [completing, setCompleting] = useState(false);
   const isDelivered = order.status === 'delivered';
   const address = order.address || '';
   const kakaoUrl = `https://map.kakao.com/link/to/${encodeURIComponent(address)},0,0`;
@@ -161,7 +172,7 @@ function DeliveryCard({ order, index }: { order: Order; index: number }) {
         <Divider sx={{ mb: 1.5 }} />
 
         {/* Navigation buttons */}
-        <Stack direction="row" spacing={1}>
+        <Stack direction="row" spacing={1} sx={{ mb: isDelivered ? 0 : 1.5 }}>
           <Button
             variant="contained"
             size="medium"
@@ -185,6 +196,30 @@ function DeliveryCard({ order, index }: { order: Order; index: number }) {
             네이버맵
           </Button>
         </Stack>
+
+        {/* 배송완료 버튼 */}
+        {!isDelivered && (
+          <Button
+            variant="contained"
+            color="success"
+            size="large"
+            fullWidth
+            startIcon={completing ? <CircularProgress size={18} color="inherit" /> : <DoneIcon />}
+            disabled={completing}
+            onClick={async () => {
+              setCompleting(true);
+              try {
+                await markOrderDelivered(order.id);
+                onDelivered(order.id);
+              } finally {
+                setCompleting(false);
+              }
+            }}
+            sx={{ py: 1.5, fontWeight: 700, fontSize: '1rem' }}
+          >
+            {completing ? '처리 중...' : '배송완료'}
+          </Button>
+        )}
       </CardContent>
     </Card>
   );
@@ -218,6 +253,23 @@ export default function DriverPage() {
     setSelectedVehicle(null);
     setOrders([]);
   }, []);
+
+  const handleDelivered = useCallback((orderId: string) => {
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, status: 'delivered' as const } : o))
+    );
+  }, []);
+
+  const handleRefresh = useCallback(async () => {
+    if (!selectedVehicle) return;
+    setLoadingOrders(true);
+    try {
+      const result = await getOrdersByVehicle(selectedVehicle);
+      setOrders(result);
+    } finally {
+      setLoadingOrders(false);
+    }
+  }, [selectedVehicle]);
 
   const deliveredCount = orders.filter((o) => o.status === 'delivered').length;
 
@@ -254,6 +306,9 @@ export default function DriverPage() {
           <Typography variant="h6" fontWeight={700} sx={{ flexGrow: 1 }}>
             {selectedVehicle}
           </Typography>
+          <IconButton color="inherit" onClick={handleRefresh} disabled={loadingOrders}>
+            <RefreshIcon />
+          </IconButton>
         </Toolbar>
       </AppBar>
 
@@ -293,7 +348,7 @@ export default function DriverPage() {
             </Typography>
           ) : (
             orders.map((order, idx) => (
-              <DeliveryCard key={order.id} order={order} index={idx} />
+              <DeliveryCard key={order.id} order={order} index={idx} onDelivered={handleDelivered} />
             ))
           )}
         </Box>
