@@ -22,12 +22,16 @@ import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
+import PrintIcon from '@mui/icons-material/Print';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
@@ -273,6 +277,41 @@ function BusinessGroupView({
   );
 }
 
+type OrderDateFilter = 'today' | 'yesterday' | 'thisWeek' | 'all';
+
+const ORDER_DATE_FILTER_LABELS: Record<OrderDateFilter, string> = {
+  today: '오늘',
+  yesterday: '어제',
+  thisWeek: '이번주',
+  all: '전체',
+};
+
+function getOrderDateRange(filter: OrderDateFilter): { start: string; end: string } | null {
+  if (filter === 'all') return null;
+  const now = new Date();
+  const fmt = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  if (filter === 'today') {
+    const s = fmt(now);
+    return { start: s, end: s };
+  }
+  if (filter === 'yesterday') {
+    const y = new Date(now);
+    y.setDate(y.getDate() - 1);
+    const s = fmt(y);
+    return { start: s, end: s };
+  }
+  // thisWeek: Monday to Sunday
+  const day = now.getDay();
+  const diffToMon = day === 0 ? 6 : day - 1;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - diffToMon);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return { start: fmt(monday), end: fmt(sunday) };
+}
+
 function getDefaultDateRange() {
   const now = new Date();
   const y = now.getFullYear();
@@ -297,6 +336,8 @@ export default function AdminDashboard() {
   const [vehicleCountDialogOpen, setVehicleCountDialogOpen] = useState(false);
   const [vehicleCount, setVehicleCount] = useState<string>('2');
   const [hideDelivered, setHideDelivered] = useState(true);
+  const [orderDateFilter, setOrderDateFilter] = useState<OrderDateFilter>('today');
+  const [copySnackbar, setCopySnackbar] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
     title: string;
@@ -668,6 +709,27 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
     }
   };
 
+  const getLoadingListOrders = (vehicle: DeliveryVehicle) =>
+    orders
+      .filter((o) => o.deliveryVehicle === vehicle)
+      .sort((a, b) => (b.deliverySequence ?? 0) - (a.deliverySequence ?? 0));
+
+  const handleCopyLoadingList = (vehicle: DeliveryVehicle) => {
+    const listOrders = getLoadingListOrders(vehicle);
+    const lines = [`[${vehicle} 상차리스트]`];
+    listOrders.forEach((order, idx) => {
+      lines.push(`상차${idx + 1}: ${order.businessName} - ${order.address}`);
+      lines.push(`  품목: ${order.items.map((i) => `${i.productName} x${i.quantity}`).join(', ')}`);
+    });
+    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+      setCopySnackbar(true);
+    });
+  };
+
+  const handlePrintLoadingList = () => {
+    window.print();
+  };
+
   const activeVehicles = getActiveVehicles(orders);
 
   const tabFilters: { label: string; value: TabFilter }[] = [
@@ -677,17 +739,28 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
     { label: '사업자별', value: 'byBusiness' },
   ];
 
+  const applyDateFilter = useCallback((list: Order[]) => {
+    const range = getOrderDateRange(orderDateFilter);
+    if (!range) return list;
+    return list.filter((o) => {
+      const d = o.createdAt.slice(0, 10);
+      return d >= range.start && d <= range.end;
+    });
+  }, [orderDateFilter]);
+
+  const dateFilteredOrders = applyDateFilter(orders);
+
   const getFilteredOrders = () => {
     let result: Order[];
     switch (filter) {
       case 'all':
-        result = orders;
+        result = dateFilteredOrders;
         break;
       case 'unassigned':
-        result = orders.filter((o) => !o.deliveryVehicle);
+        result = dateFilteredOrders.filter((o) => !o.deliveryVehicle);
         break;
       default:
-        result = orders
+        result = dateFilteredOrders
           .filter((o) => o.deliveryVehicle === filter)
           .sort((a, b) => (a.deliverySequence ?? 0) - (b.deliverySequence ?? 0));
         break;
@@ -699,8 +772,15 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
   };
 
   const filteredOrders = getFilteredOrders();
-  const pendingCount = orders.filter((o) => o.status === 'pending').length;
-  const deliveredCount = orders.filter((o) => o.status === 'delivered').length;
+  const pendingCount = dateFilteredOrders.filter((o) => o.status === 'pending').length;
+  const deliveredCount = dateFilteredOrders.filter((o) => o.status === 'delivered').length;
+
+  const dateRangeLabel = (() => {
+    const range = getOrderDateRange(orderDateFilter);
+    if (!range) return '';
+    if (range.start === range.end) return range.start;
+    return `${range.start} ~ ${range.end}`;
+  })();
 
   const formatDate = (iso: string) => {
     const d = new Date(iso);
@@ -709,6 +789,13 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
 
   return (
     <Box>
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          #loading-list-print-area, #loading-list-print-area * { visibility: visible !important; }
+          #loading-list-print-area { position: absolute; left: 0; top: 0; width: 100%; }
+        }
+      `}</style>
       <AppBar position="static">
         <Toolbar>
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
@@ -731,9 +818,9 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
           {tabFilters.map((t) => {
             let count: number;
             if (t.value === 'all') {
-              count = orders.length;
+              count = dateFilteredOrders.length;
             } else if (t.value === 'unassigned') {
-              count = orders.filter((o) => !o.deliveryVehicle).length;
+              count = dateFilteredOrders.filter((o) => !o.deliveryVehicle).length;
             } else if (t.value === 'byBusiness') {
               const now = new Date();
               count = orders.filter((o) => {
@@ -741,11 +828,33 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
                 return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
               }).length;
             } else {
-              count = orders.filter((o) => o.deliveryVehicle === t.value).length;
+              count = dateFilteredOrders.filter((o) => o.deliveryVehicle === t.value).length;
             }
             return <Tab key={t.value} label={`${t.label} (${count})`} />;
           })}
         </Tabs>
+
+        {filter !== 'byBusiness' && (
+          <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+            <ToggleButtonGroup
+              value={orderDateFilter}
+              exclusive
+              onChange={(_, val) => { if (val) setOrderDateFilter(val); }}
+              size="small"
+            >
+              {(Object.keys(ORDER_DATE_FILTER_LABELS) as OrderDateFilter[]).map((key) => (
+                <ToggleButton key={key} value={key}>
+                  {ORDER_DATE_FILTER_LABELS[key]}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+            {dateRangeLabel && (
+              <Typography variant="body2" color="text.secondary">
+                {dateRangeLabel}
+              </Typography>
+            )}
+          </Box>
+        )}
 
         <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
           {pendingCount > 0 && (
@@ -1075,11 +1184,9 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             마지막 배송지부터 역순으로 상차하세요 (맨 위 = 가장 먼저 싣기)
           </Typography>
-          <Stack spacing={1}>
+          <Stack spacing={1} id="loading-list-print-area">
             {loadingListVehicle &&
-              orders
-                .filter((o) => o.deliveryVehicle === loadingListVehicle)
-                .sort((a, b) => (b.deliverySequence ?? 0) - (a.deliverySequence ?? 0))
+              getLoadingListOrders(loadingListVehicle)
                 .map((order, idx) => (
                   <Paper key={order.id} variant="outlined" sx={{ p: 1.5 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1112,6 +1219,18 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
           </Stack>
         </DialogContent>
         <DialogActions>
+          <Button
+            startIcon={<PrintIcon />}
+            onClick={handlePrintLoadingList}
+          >
+            인쇄
+          </Button>
+          <Button
+            startIcon={<ContentCopyIcon />}
+            onClick={() => loadingListVehicle && handleCopyLoadingList(loadingListVehicle)}
+          >
+            복사
+          </Button>
           <Button onClick={() => setLoadingListVehicle(null)}>닫기</Button>
         </DialogActions>
       </Dialog>
@@ -1123,6 +1242,10 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
       <Snackbar open={!!aiError} autoHideDuration={5000} onClose={() => setAiError(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
         <Alert severity="error" variant="filled" onClose={() => setAiError(null)}>{aiError}</Alert>
+      </Snackbar>
+      <Snackbar open={copySnackbar} autoHideDuration={2000} onClose={() => setCopySnackbar(false)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+        <Alert severity="success" variant="filled" onClose={() => setCopySnackbar(false)}>클립보드에 복사되었습니다</Alert>
       </Snackbar>
     </Box>
   );

@@ -15,6 +15,7 @@ import CartPage from './pages/CartPage';
 import ProfilePage from './pages/ProfilePage';
 import OrderCompletePage from './pages/OrderCompletePage';
 import OrderHistoryPage from './pages/OrderHistoryPage';
+import DriverPage from './pages/DriverPage';
 
 const theme = createTheme({
   palette: {
@@ -143,6 +144,7 @@ function RegularApp() {
 
 function App() {
   const isAdminRoute = window.location.pathname.startsWith('/admin');
+  const isDriverRoute = window.location.pathname.startsWith('/driver');
 
   return (
     <ThemeProvider theme={theme}>
@@ -151,6 +153,8 @@ function App() {
         <AdminAuthProvider>
           <AdminApp />
         </AdminAuthProvider>
+      ) : isDriverRoute ? (
+        <DriverPage />
       ) : (
         <RegularApp />
       )}
