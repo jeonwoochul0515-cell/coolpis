@@ -23,6 +23,8 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import MapIcon from '@mui/icons-material/Map';
 import DoneIcon from '@mui/icons-material/Done';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { auth } from '../firebase';
 import { getOrdersByVehicle, getActiveVehicles, markOrderDelivered } from '../services/driverOrderStore';
 import type { Order } from '../types/order';
 
@@ -231,12 +233,29 @@ export default function DriverPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingVehicles, setLoadingVehicles] = useState(true);
   const [loadingOrders, setLoadingOrders] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
 
+  // 익명 로그인 자동 처리
   useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setAuthReady(true);
+      } else {
+        signInAnonymously(auth).catch((err) =>
+          console.error('익명 로그인 실패:', err)
+        );
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // 인증 완료 후 차량 목록 조회
+  useEffect(() => {
+    if (!authReady) return;
     getActiveVehicles()
       .then(setVehicles)
       .finally(() => setLoadingVehicles(false));
-  }, []);
+  }, [authReady]);
 
   const handleSelectVehicle = useCallback(async (vehicle: string) => {
     setSelectedVehicle(vehicle);

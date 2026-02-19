@@ -13,6 +13,14 @@ service cloud.firestore {
       // 관리자(이메일/비밀번호 로그인): 전체 주문 읽기/수정
       allow read, update: if request.auth != null
         && request.auth.token.firebase.sign_in_provider == 'password';
+
+      // 배송기사(익명 로그인): 배차된 주문 읽기 + 배송완료 처리
+      allow read: if request.auth != null
+        && resource.data.deliveryVehicle != null;
+      allow update: if request.auth != null
+        && resource.data.deliveryVehicle != null
+        && request.resource.data.status == 'delivered'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
     }
 
     match /payments/{paymentId} {
