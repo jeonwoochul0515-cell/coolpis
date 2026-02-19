@@ -3,6 +3,7 @@ import {
   getDocs,
   doc,
   updateDoc,
+  writeBatch,
   query,
   where,
 } from 'firebase/firestore';
@@ -28,6 +29,19 @@ export async function markOrderDelivered(orderId: string): Promise<void> {
   await updateDoc(doc(db, ORDERS_COLLECTION, orderId), {
     status: 'delivered',
   });
+}
+
+/** 배송 순서 스왑 */
+export async function swapDeliverySequence(
+  orderId1: string,
+  seq1: number,
+  orderId2: string,
+  seq2: number
+): Promise<void> {
+  const batch = writeBatch(db);
+  batch.update(doc(db, ORDERS_COLLECTION, orderId1), { deliverySequence: seq2 });
+  batch.update(doc(db, ORDERS_COLLECTION, orderId2), { deliverySequence: seq1 });
+  await batch.commit();
 }
 
 /** 배차된 차량 목록 조회 (중복 제거, 정렬) */

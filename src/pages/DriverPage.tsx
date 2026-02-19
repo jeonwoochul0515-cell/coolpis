@@ -21,11 +21,13 @@ import PhoneIcon from '@mui/icons-material/Phone';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import MapIcon from '@mui/icons-material/Map';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import DoneIcon from '@mui/icons-material/Done';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
-import { getOrdersByVehicle, getActiveVehicles, markOrderDelivered } from '../services/driverOrderStore';
+import { getOrdersByVehicle, getActiveVehicles, markOrderDelivered, swapDeliverySequence } from '../services/driverOrderStore';
 import type { Order } from '../types/order';
 
 function VehicleSelectScreen({
@@ -93,11 +95,17 @@ function VehicleSelectScreen({
 function DeliveryCard({
   order,
   index,
+  totalCount,
   onDelivered,
+  onMoveUp,
+  onMoveDown,
 }: {
   order: Order;
   index: number;
+  totalCount: number;
   onDelivered: (orderId: string) => void;
+  onMoveUp: (orderId: string) => void;
+  onMoveDown: (orderId: string) => void;
 }) {
   const [completing, setCompleting] = useState(false);
   const isDelivered = order.status === 'delivered';
@@ -118,6 +126,26 @@ function DeliveryCard({
         {/* Header row */}
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {!isDelivered && (
+              <Box sx={{ display: 'flex', flexDirection: 'column', mr: 0.5 }}>
+                <IconButton
+                  size="small"
+                  disabled={index === 0}
+                  onClick={() => onMoveUp(order.id)}
+                  sx={{ p: 0.3 }}
+                >
+                  <ArrowUpwardIcon fontSize="small" />
+                </IconButton>
+                <IconButton
+                  size="small"
+                  disabled={index >= totalCount - 1}
+                  onClick={() => onMoveDown(order.id)}
+                  sx={{ p: 0.3 }}
+                >
+                  <ArrowDownwardIcon fontSize="small" />
+                </IconButton>
+              </Box>
+            )}
             <Chip
               label={`#${index + 1}`}
               size="small"
@@ -279,6 +307,52 @@ export default function DriverPage() {
     );
   }, []);
 
+  const handleMoveUp = useCallback(async (orderId: string) => {
+    const idx = orders.findIndex((o) => o.id === orderId);
+    if (idx <= 0) return;
+    const current = orders[idx];
+    const above = orders[idx - 1];
+    try {
+      await swapDeliverySequence(
+        current.id, current.deliverySequence ?? 0,
+        above.id, above.deliverySequence ?? 0
+      );
+      setOrders((prev) => {
+        const next = [...prev];
+        const curSeq = next[idx].deliverySequence ?? 0;
+        const abvSeq = next[idx - 1].deliverySequence ?? 0;
+        next[idx] = { ...next[idx], deliverySequence: abvSeq };
+        next[idx - 1] = { ...next[idx - 1], deliverySequence: curSeq };
+        return next.sort((a, b) => (a.deliverySequence ?? 0) - (b.deliverySequence ?? 0));
+      });
+    } catch (err) {
+      console.error('순서 변경 실패:', err);
+    }
+  }, [orders]);
+
+  const handleMoveDown = useCallback(async (orderId: string) => {
+    const idx = orders.findIndex((o) => o.id === orderId);
+    if (idx < 0 || idx >= orders.length - 1) return;
+    const current = orders[idx];
+    const below = orders[idx + 1];
+    try {
+      await swapDeliverySequence(
+        current.id, current.deliverySequence ?? 0,
+        below.id, below.deliverySequence ?? 0
+      );
+      setOrders((prev) => {
+        const next = [...prev];
+        const curSeq = next[idx].deliverySequence ?? 0;
+        const blwSeq = next[idx + 1].deliverySequence ?? 0;
+        next[idx] = { ...next[idx], deliverySequence: blwSeq };
+        next[idx + 1] = { ...next[idx + 1], deliverySequence: curSeq };
+        return next.sort((a, b) => (a.deliverySequence ?? 0) - (b.deliverySequence ?? 0));
+      });
+    } catch (err) {
+      console.error('순서 변경 실패:', err);
+    }
+  }, [orders]);
+
   const handleRefresh = useCallback(async () => {
     if (!selectedVehicle) return;
     setLoadingOrders(true);
@@ -367,7 +441,15 @@ export default function DriverPage() {
             </Typography>
           ) : (
             orders.map((order, idx) => (
-              <DeliveryCard key={order.id} order={order} index={idx} onDelivered={handleDelivered} />
+              <DeliveryCard
+                key={order.id}
+                order={order}
+                index={idx}
+                totalCount={orders.length}
+                onDelivered={handleDelivered}
+                onMoveUp={handleMoveUp}
+                onMoveDown={handleMoveDown}
+              />
             ))
           )}
         </Box>
