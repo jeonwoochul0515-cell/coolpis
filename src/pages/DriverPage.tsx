@@ -151,6 +151,7 @@ function DeliveryCard({
   const address = order.address || '';
   const kakaoUrl = `https://map.kakao.com/link/to/${encodeURIComponent(address)},0,0`;
   const naverUrl = `https://map.naver.com/v5/search/${encodeURIComponent(address)}`;
+  const googleUrl = `https://www.google.com/maps/search/${encodeURIComponent(address)}/`;
 
   return (
     <Card
@@ -315,6 +316,18 @@ function DeliveryCard({
             sx={{ flex: 1, py: 1.2 }}
           >
             네이버맵
+          </Button>
+          <Button
+            variant="outlined"
+            size="medium"
+            startIcon={<MapIcon />}
+            href={googleUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            sx={{ flex: 1, py: 1.2 }}
+            color="success"
+          >
+            구글맵
           </Button>
         </Stack>
 

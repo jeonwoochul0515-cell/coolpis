@@ -63,6 +63,8 @@ import InputLabel from '@mui/material/InputLabel';
 import StatsView from './StatsView';
 import TaxInvoiceView from './TaxInvoiceView';
 import SettlementView from './SettlementView';
+import DeliveryMap from '../components/DeliveryMap';
+import MapIcon from '@mui/icons-material/Map';
 import { exportOrdersCsv, exportPaymentsCsv } from '../utils/csvExport';
 
 type TabFilter = string; // 'all' | 'unassigned' | '배송차N' | 'byBusiness'
@@ -845,6 +847,7 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
     { label: '전체', value: 'all' },
     { label: '미배정', value: 'unassigned' },
     ...activeVehicles.map((v) => ({ label: v, value: v })),
+    { label: '지도', value: 'map' },
     { label: '사업자별', value: 'byBusiness' },
     { label: '세금계산서', value: 'taxInvoice' },
     { label: '정산', value: 'settlement' },
@@ -937,6 +940,8 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
                 const d = new Date(o.createdAt);
                 return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
               }).length;
+            } else if (t.value === 'map') {
+              count = dateFilteredOrders.length;
             } else if (t.value === 'taxInvoice') {
               count = 0;
             } else if (t.value === 'settlement') {
@@ -946,11 +951,11 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
             } else {
               count = dateFilteredOrders.filter((o) => o.deliveryVehicle === t.value).length;
             }
-            return <Tab key={t.value} label={t.value === 'taxInvoice' || t.value === 'settlement' ? t.label : `${t.label} (${count})`} />;
+            return <Tab key={t.value} label={t.value === 'taxInvoice' || t.value === 'settlement' || t.value === 'map' ? t.label : `${t.label} (${count})`} icon={t.value === 'map' ? <MapIcon fontSize="small" /> : undefined} iconPosition="start" />;
           })}
         </Tabs>
 
-        {filter !== 'byBusiness' && filter !== 'stats' && filter !== 'taxInvoice' && filter !== 'settlement' && (
+        {filter !== 'byBusiness' && filter !== 'stats' && filter !== 'taxInvoice' && filter !== 'settlement' && filter !== 'map' && (
           <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
             <ToggleButtonGroup
               value={orderDateFilter}
@@ -972,7 +977,7 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
           </Box>
         )}
 
-        {filter !== 'stats' && filter !== 'taxInvoice' && filter !== 'settlement' && <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+        {filter !== 'stats' && filter !== 'taxInvoice' && filter !== 'settlement' && filter !== 'map' && <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
           {pendingCount > 0 && (
             <Button
               variant="contained"
@@ -1055,6 +1060,8 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
             <CircularProgress />
           </Box>
+        ) : filter === 'map' ? (
+          <DeliveryMap orders={dateFilteredOrders} height="600px" />
         ) : filter === 'stats' ? (
           <StatsView orders={orders} />
         ) : filter === 'taxInvoice' ? (
