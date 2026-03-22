@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
@@ -25,10 +25,16 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import DoneIcon from '@mui/icons-material/Done';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import CameraAltIcon from '@mui/icons-material/CameraAlt';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { auth } from '../firebase';
-import { getOrdersByVehicle, getActiveVehicles, markOrderDelivered, swapDeliverySequence } from '../services/driverOrderStore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { auth, storage } from '../firebase';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import NoteIcon from '@mui/icons-material/Note';
+import Paper from '@mui/material/Paper';
+import { getOrdersByVehicle, getActiveVehicles, markOrderDelivered, markOrderInTransit, markOrderFailed, swapDeliverySequence } from '../services/driverOrderStore';
 import type { Order } from '../types/order';
+import { estimateEta } from '../utils/deliveryEta';
 
 function VehicleSelectScreen({
   vehicles,
@@ -97,18 +103,51 @@ function DeliveryCard({
   index,
   totalCount,
   onDelivered,
+  onInTransit,
+  onFailed,
   onMoveUp,
   onMoveDown,
+  onPhotoUploaded,
 }: {
   order: Order;
   index: number;
   totalCount: number;
-  onDelivered: (orderId: string) => void;
+  onDelivered: (orderId: string, deliveryPhoto?: string) => void;
+  onInTransit: (orderId: string) => void;
+  onFailed: (orderId: string) => void;
   onMoveUp: (orderId: string) => void;
   onMoveDown: (orderId: string) => void;
+  onPhotoUploaded: (orderId: string, photoUrl: string) => void;
 }) {
   const [completing, setCompleting] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
+  const [failing, setFailing] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState<string | undefined>(order.deliveryPhoto);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const storageRef = ref(storage, `orders/${order.id}/delivery.jpg`);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+      setPhotoUrl(url);
+      onPhotoUploaded(order.id, url);
+    } catch (err) {
+      console.error('사진 업로드 실패:', err);
+    } finally {
+      setUploading(false);
+      // reset input so same file can be re-selected
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
   const isDelivered = order.status === 'delivered';
+  const isFailed = order.status === 'failed';
+  const isInTransit = order.status === 'in_transit';
+  const isTerminal = isDelivered || isFailed;
   const address = order.address || '';
   const kakaoUrl = `https://map.kakao.com/link/to/${encodeURIComponent(address)},0,0`;
   const naverUrl = `https://map.naver.com/v5/search/${encodeURIComponent(address)}`;
@@ -117,16 +156,22 @@ function DeliveryCard({
     <Card
       sx={{
         mb: 2,
-        opacity: isDelivered ? 0.7 : 1,
-        borderLeft: isDelivered ? '4px solid #4caf50' : '4px solid',
-        borderLeftColor: isDelivered ? '#4caf50' : 'primary.main',
+        opacity: isTerminal ? 0.7 : 1,
+        borderLeft: '4px solid',
+        borderLeftColor: isDelivered
+          ? '#4caf50'
+          : isFailed
+            ? '#f44336'
+            : isInTransit
+              ? '#ff9800'
+              : 'primary.main',
       }}
     >
       <CardContent sx={{ pb: '12px !important' }}>
         {/* Header row */}
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {!isDelivered && (
+            {!isTerminal && (
               <Box sx={{ display: 'flex', flexDirection: 'column', mr: 0.5 }}>
                 <IconButton
                   size="small"
@@ -165,12 +210,37 @@ function DeliveryCard({
               variant="outlined"
             />
           )}
+          {isFailed && (
+            <Chip
+              icon={<ErrorOutlineIcon />}
+              label="배송실패"
+              size="small"
+              color="error"
+              variant="outlined"
+            />
+          )}
+          {isInTransit && (
+            <Chip
+              icon={<LocalShippingIcon />}
+              label="배송중"
+              size="small"
+              color="warning"
+              variant="outlined"
+            />
+          )}
         </Box>
 
         {/* Address */}
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           {address}
         </Typography>
+
+        {/* ETA - 배송 전인 주문에만 표시 */}
+        {!isTerminal && typeof order.deliverySequence === 'number' && order.deliverySequence > 0 && (
+          <Typography variant="body2" sx={{ mb: 1, color: 'info.main', fontWeight: 600 }}>
+            예상 도착: {estimateEta(order.deliverySequence, totalCount)}
+          </Typography>
+        )}
 
         {/* Phone */}
         {order.phone && (
@@ -199,10 +269,31 @@ function DeliveryCard({
           ))}
         </Box>
 
+        {/* Delivery Note */}
+        {order.deliveryNote && (
+          <Paper
+            sx={{
+              p: 1.5,
+              mb: 1.5,
+              bgcolor: '#fff8e1',
+              border: '1px solid #ffe082',
+              borderRadius: 1,
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 1,
+            }}
+          >
+            <NoteIcon sx={{ fontSize: 18, color: '#f9a825', mt: 0.2 }} />
+            <Typography variant="body2" sx={{ fontWeight: 500, color: '#6d4c00' }}>
+              {order.deliveryNote}
+            </Typography>
+          </Paper>
+        )}
+
         <Divider sx={{ mb: 1.5 }} />
 
         {/* Navigation buttons */}
-        <Stack direction="row" spacing={1} sx={{ mb: isDelivered ? 0 : 1.5 }}>
+        <Stack direction="row" spacing={1} sx={{ mb: isTerminal ? 0 : 1.5 }}>
           <Button
             variant="contained"
             size="medium"
@@ -227,28 +318,141 @@ function DeliveryCard({
           </Button>
         </Stack>
 
-        {/* 배송완료 버튼 */}
-        {!isDelivered && (
+        {/* 배송중 버튼 (confirmed 상태에서만 표시) */}
+        {!isTerminal && !isInTransit && (
           <Button
             variant="contained"
-            color="success"
+            color="warning"
             size="large"
             fullWidth
-            startIcon={completing ? <CircularProgress size={18} color="inherit" /> : <DoneIcon />}
-            disabled={completing}
+            startIcon={transitioning ? <CircularProgress size={18} color="inherit" /> : <LocalShippingIcon />}
+            disabled={transitioning}
             onClick={async () => {
-              setCompleting(true);
+              setTransitioning(true);
               try {
-                await markOrderDelivered(order.id);
-                onDelivered(order.id);
+                await markOrderInTransit(order.id);
+                onInTransit(order.id);
               } finally {
-                setCompleting(false);
+                setTransitioning(false);
               }
             }}
-            sx={{ py: 1.5, fontWeight: 700, fontSize: '1rem' }}
+            sx={{ py: 1.5, fontWeight: 700, fontSize: '1rem', mb: 1 }}
           >
-            {completing ? '처리 중...' : '배송완료'}
+            {transitioning ? '처리 중...' : '배송중'}
           </Button>
+        )}
+
+        {/* 배송완료 / 배송실패 버튼 (배송중 상태에서 표시) */}
+        {isInTransit && (
+          <>
+            {/* 사진 촬영 영역 */}
+            <Box sx={{ mb: 1.5 }}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                style={{ display: 'none' }}
+                onChange={handlePhotoCapture}
+              />
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Button
+                  variant="outlined"
+                  size="medium"
+                  startIcon={uploading ? <CircularProgress size={18} /> : <CameraAltIcon />}
+                  disabled={uploading}
+                  onClick={() => fileInputRef.current?.click()}
+                  sx={{ fontWeight: 600 }}
+                >
+                  {uploading ? '업로드 중...' : photoUrl ? '사진 변경' : '배송 사진 촬영'}
+                </Button>
+                {photoUrl && (
+                  <Box
+                    component="img"
+                    src={photoUrl}
+                    alt="배송 사진"
+                    sx={{
+                      width: 48,
+                      height: 48,
+                      objectFit: 'cover',
+                      borderRadius: 1,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => window.open(photoUrl, '_blank')}
+                  />
+                )}
+              </Stack>
+            </Box>
+            <Stack direction="row" spacing={1}>
+              <Button
+                variant="contained"
+                color="success"
+                size="large"
+                fullWidth
+                startIcon={completing ? <CircularProgress size={18} color="inherit" /> : <DoneIcon />}
+                disabled={completing || failing}
+                onClick={async () => {
+                  setCompleting(true);
+                  try {
+                    await markOrderDelivered(order.id, photoUrl);
+                    onDelivered(order.id, photoUrl);
+                  } finally {
+                    setCompleting(false);
+                  }
+                }}
+                sx={{ py: 1.5, fontWeight: 700, fontSize: '1rem' }}
+              >
+                {completing ? '처리 중...' : '배송완료'}
+              </Button>
+              <Button
+                variant="contained"
+                color="error"
+                size="large"
+                fullWidth
+                startIcon={failing ? <CircularProgress size={18} color="inherit" /> : <ErrorOutlineIcon />}
+                disabled={completing || failing}
+                onClick={async () => {
+                  setFailing(true);
+                  try {
+                    await markOrderFailed(order.id);
+                    onFailed(order.id);
+                  } finally {
+                    setFailing(false);
+                  }
+                }}
+                sx={{ py: 1.5, fontWeight: 700, fontSize: '1rem' }}
+              >
+                {failing ? '처리 중...' : '배송실패'}
+              </Button>
+            </Stack>
+          </>
+        )}
+
+        {/* 배송완료 후 사진 썸네일 표시 */}
+        {isDelivered && order.deliveryPhoto && (
+          <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <CameraAltIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+            <Box
+              component="img"
+              src={order.deliveryPhoto}
+              alt="배송 사진"
+              sx={{
+                width: 48,
+                height: 48,
+                objectFit: 'cover',
+                borderRadius: 1,
+                border: '1px solid',
+                borderColor: 'divider',
+                cursor: 'pointer',
+              }}
+              onClick={() => window.open(order.deliveryPhoto, '_blank')}
+            />
+            <Typography variant="caption" color="text.secondary">
+              배송 사진
+            </Typography>
+          </Box>
         )}
       </CardContent>
     </Card>
@@ -301,9 +505,27 @@ export default function DriverPage() {
     setOrders([]);
   }, []);
 
-  const handleDelivered = useCallback((orderId: string) => {
+  const handleDelivered = useCallback((orderId: string, deliveryPhoto?: string) => {
     setOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, status: 'delivered' as const } : o))
+      prev.map((o) => (o.id === orderId ? { ...o, status: 'delivered' as const, deliveryPhoto: deliveryPhoto ?? o.deliveryPhoto } : o))
+    );
+  }, []);
+
+  const handlePhotoUploaded = useCallback((orderId: string, photoUrl: string) => {
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, deliveryPhoto: photoUrl } : o))
+    );
+  }, []);
+
+  const handleInTransit = useCallback((orderId: string) => {
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, status: 'in_transit' as const } : o))
+    );
+  }, []);
+
+  const handleFailed = useCallback((orderId: string) => {
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, status: 'failed' as const } : o))
     );
   }, []);
 
@@ -365,6 +587,7 @@ export default function DriverPage() {
   }, [selectedVehicle]);
 
   const deliveredCount = orders.filter((o) => o.status === 'delivered').length;
+  const failedCount = orders.filter((o) => o.status === 'failed').length;
 
   // Vehicle selection screen
   if (!selectedVehicle) {
@@ -427,12 +650,22 @@ export default function DriverPage() {
             <Typography variant="body1" fontWeight={600}>
               총 {orders.length}건
             </Typography>
-            <Chip
-              icon={<CheckCircleIcon />}
-              label={`${deliveredCount}/${orders.length} 배송완료`}
-              color={deliveredCount === orders.length && orders.length > 0 ? 'success' : 'default'}
-              variant="outlined"
-            />
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Chip
+                icon={<CheckCircleIcon />}
+                label={`${deliveredCount}/${orders.length} 배송완료`}
+                color={deliveredCount === orders.length && orders.length > 0 ? 'success' : 'default'}
+                variant="outlined"
+              />
+              {failedCount > 0 && (
+                <Chip
+                  icon={<ErrorOutlineIcon />}
+                  label={`${failedCount}건 실패`}
+                  color="error"
+                  variant="outlined"
+                />
+              )}
+            </Box>
           </Box>
 
           {orders.length === 0 ? (
@@ -447,8 +680,11 @@ export default function DriverPage() {
                 index={idx}
                 totalCount={orders.length}
                 onDelivered={handleDelivered}
+                onInTransit={handleInTransit}
+                onFailed={handleFailed}
                 onMoveUp={handleMoveUp}
                 onMoveDown={handleMoveDown}
+                onPhotoUploaded={handlePhotoUploaded}
               />
             ))
           )}

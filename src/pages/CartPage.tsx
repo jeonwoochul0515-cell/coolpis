@@ -5,6 +5,7 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
+import TextField from '@mui/material/TextField';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import CartItemComponent from '../components/CartItem';
 import CartSummary from '../components/CartSummary';
@@ -19,12 +20,13 @@ export default function CartPage() {
   const navigate = useNavigate();
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
   const [submitting, setSubmitting] = useState(false);
+  const [deliveryNote, setDeliveryNote] = useState('');
 
   const handleSubmitOrder = async () => {
     if (!uid || !profile) return;
     setSubmitting(true);
     try {
-      await saveOrder(uid, profile, items, totalItems, totalPrice);
+      await saveOrder(uid, profile, items, totalItems, totalPrice, deliveryNote.trim() || undefined);
       clearCart();
       navigate('/order-complete');
     } catch (err) {
@@ -77,6 +79,16 @@ export default function CartPage() {
           />
         ))}
       </Box>
+      <TextField
+        label="배송 요청사항"
+        placeholder="예: 문 앞에 놓아주세요, 경비실에 맡겨주세요 등"
+        multiline
+        rows={2}
+        fullWidth
+        value={deliveryNote}
+        onChange={(e) => setDeliveryNote(e.target.value)}
+        sx={{ mt: 2 }}
+      />
       <CartSummary
         totalItems={totalItems}
         totalPrice={totalPrice}

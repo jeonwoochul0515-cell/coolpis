@@ -9,13 +9,17 @@ import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import StorefrontIcon from '@mui/icons-material/Storefront';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import PersonIcon from '@mui/icons-material/Person';
+import DarkModeIcon from '@mui/icons-material/DarkMode';
+import LightModeIcon from '@mui/icons-material/LightMode';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useProfile } from '../context/ProfileContext';
+import { useThemeMode } from '../context/ThemeContext';
 
 export default function Header() {
   const { totalItems } = useCart();
   const { isRegistered, profile } = useProfile();
+  const { themeMode, toggleTheme } = useThemeMode();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -52,6 +56,13 @@ export default function Header() {
             title={profile?.businessName || '프로필'}
           >
             <PersonIcon />
+          </IconButton>
+          <IconButton
+            color="primary"
+            onClick={toggleTheme}
+            title={themeMode === 'light' ? '다크 모드' : '라이트 모드'}
+          >
+            {themeMode === 'light' ? <DarkModeIcon /> : <LightModeIcon />}
           </IconButton>
         </Box>
       </Toolbar>

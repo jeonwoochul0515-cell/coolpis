@@ -24,10 +24,26 @@ export async function getOrdersByVehicle(vehicle: string): Promise<Order[]> {
     .sort((a, b) => (a.deliverySequence ?? 0) - (b.deliverySequence ?? 0));
 }
 
-/** 주문 배송완료 처리 */
-export async function markOrderDelivered(orderId: string): Promise<void> {
+/** 주문 배송중 처리 */
+export async function markOrderInTransit(orderId: string): Promise<void> {
   await updateDoc(doc(db, ORDERS_COLLECTION, orderId), {
-    status: 'delivered',
+    status: 'in_transit',
+  });
+}
+
+/** 주문 배송완료 처리 */
+export async function markOrderDelivered(orderId: string, deliveryPhoto?: string): Promise<void> {
+  const updateData: Record<string, unknown> = { status: 'delivered' };
+  if (deliveryPhoto) {
+    updateData.deliveryPhoto = deliveryPhoto;
+  }
+  await updateDoc(doc(db, ORDERS_COLLECTION, orderId), updateData);
+}
+
+/** 주문 배송실패 처리 */
+export async function markOrderFailed(orderId: string): Promise<void> {
+  await updateDoc(doc(db, ORDERS_COLLECTION, orderId), {
+    status: 'failed',
   });
 }
 

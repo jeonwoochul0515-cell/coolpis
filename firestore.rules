@@ -2,37 +2,60 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ── 헬퍼 함수 ──
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isAdmin() {
+      return isSignedIn()
+        && request.auth.token.firebase.sign_in_provider == 'password';
+    }
+    function isOwner(uid) {
+      return isSignedIn()
+        && request.auth.uid == uid;
+    }
+    function isCustomer() {
+      return isSignedIn()
+        && resource.data.uid == request.auth.uid;
+    }
+    function isDriver() {
+      return isSignedIn()
+        && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+
+    // ── profiles ──
+    match /profiles/{profileId} {
+      // 본인 프로필만 읽기/쓰기 (profileId == uid)
+      allow read, write: if isOwner(profileId);
+
+      // 관리자(이메일/비밀번호 인증)는 전체 프로필 읽기 가능
+      allow read: if isAdmin();
+    }
+
+    // ── orders ──
     match /orders/{orderId} {
       // 주문 생성: 로그인한 사용자 누구나
-      allow create: if request.auth != null;
+      allow create: if isSignedIn();
 
       // 고객: 본인 주문만 읽기/삭제
-      allow read, delete: if request.auth != null
-        && resource.data.uid == request.auth.uid;
+      allow read, delete: if isCustomer();
 
       // 관리자(이메일/비밀번호 로그인): 전체 주문 읽기/수정
-      allow read, update: if request.auth != null
-        && request.auth.token.firebase.sign_in_provider == 'password';
+      allow read, update: if isAdmin();
 
-      // 배송기사(익명 로그인): 배차된 주문 읽기 + 배송완료/순서변경
-      allow read: if request.auth != null
+      // 배송기사(익명 로그인): 배차된 주문만 읽기 + status/deliverySequence만 변경 가능
+      allow read: if isDriver()
         && resource.data.deliveryVehicle != null;
-      allow update: if request.auth != null
+      allow update: if isDriver()
         && resource.data.deliveryVehicle != null
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'deliverySequence']);
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'deliverySequence']);
     }
 
+    // ── payments ──
     match /payments/{paymentId} {
-      // 고객: 본인 사업자번호 입금 내역 읽기
-      allow read: if request.auth != null;
-
-      // 관리자: 전체 입금 CRUD
-      allow read, write: if request.auth != null
-        && request.auth.token.firebase.sign_in_provider == 'password';
-    }
-
-    match /profiles/{profileId} {
-      allow read, write: if request.auth != null;
+      // 관리자만 전체 읽기/쓰기
+      allow read, write: if isAdmin();
     }
 
   }

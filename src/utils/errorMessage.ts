@@ -1,3 +1,5 @@
+import { log } from './logger';
+
 const firebaseErrorMap: Record<string, string> = {
   'permission-denied': '접근 권한이 없습니다. Firestore 보안 규칙을 확인하세요.',
   'not-found': '요청한 데이터를 찾을 수 없습니다.',
@@ -25,13 +27,16 @@ export function getErrorMessage(err: unknown, fallback = '오류가 발생했습
     const codeMatch = err.message.match(/\(([^)]+)\)/);
     const code = codeMatch?.[1] || (err as { code?: string }).code;
     if (code && firebaseErrorMap[code]) {
+      log('error', firebaseErrorMap[code], { code, originalMessage: err.message });
       return firebaseErrorMap[code];
     }
     // Check code property directly
     const firebaseErr = err as { code?: string };
     if (firebaseErr.code && firebaseErrorMap[firebaseErr.code]) {
+      log('error', firebaseErrorMap[firebaseErr.code], { code: firebaseErr.code, originalMessage: err.message });
       return firebaseErrorMap[firebaseErr.code];
     }
+    log('warn', 'Unrecognized error', { message: err.message, name: err.name });
   }
   return fallback;
 }

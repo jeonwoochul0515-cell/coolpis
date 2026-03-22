@@ -8,6 +8,8 @@ export interface OrderItem {
 
 export type DeliveryVehicle = string;
 
+export type OrderStatus = 'pending' | 'confirmed' | 'in_transit' | 'delivered' | 'failed';
+
 export interface Order {
   id: string;
   uid: string;
@@ -19,8 +21,10 @@ export interface Order {
   items: OrderItem[];
   totalItems: number;
   totalPrice: number;
-  status: 'pending' | 'confirmed' | 'delivered';
+  status: OrderStatus;
   createdAt: string;
   deliveryVehicle?: DeliveryVehicle | null;
   deliverySequence?: number;
+  deliveryNote?: string;
+  deliveryPhoto?: string;
 }

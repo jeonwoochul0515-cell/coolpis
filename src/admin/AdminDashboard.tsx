@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import Box from '@mui/material/Box';
 import AppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
@@ -31,6 +31,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import PrintIcon from '@mui/icons-material/Print';
+import DownloadIcon from '@mui/icons-material/Download';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';
@@ -51,21 +52,35 @@ import {
   deleteOrder,
 } from '../services/adminOrderStore';
 import { getAllPayments, addPayment, deletePayment } from '../services/paymentStore';
+import { findProfileByRegNumber, updateCreditLimit } from '../services/profileStore';
 import type { Order, DeliveryVehicle } from '../types/order';
-import type { Payment } from '../types/payment';
+import type { Payment, PaymentType } from '../types/payment';
+import { PAYMENT_TYPE_LABELS } from '../types/payment';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
+import StatsView from './StatsView';
+import TaxInvoiceView from './TaxInvoiceView';
+import SettlementView from './SettlementView';
+import { exportOrdersCsv, exportPaymentsCsv } from '../utils/csvExport';
 
 type TabFilter = string; // 'all' | 'unassigned' | '배송차N' | 'byBusiness'
 
 const STATUS_LABELS: Record<Order['status'], string> = {
   pending: '접수대기',
   confirmed: '주문확인',
+  in_transit: '배송중',
   delivered: '배송완료',
+  failed: '배송실패',
 };
 
-const STATUS_COLORS: Record<Order['status'], 'warning' | 'info' | 'success'> = {
+const STATUS_COLORS: Record<Order['status'], 'warning' | 'info' | 'success' | 'error' | 'default'> = {
   pending: 'warning',
   confirmed: 'info',
+  in_transit: 'info',
   delivered: 'success',
+  failed: 'error',
 };
 
 function getActiveVehicles(orders: Order[]): DeliveryVehicle[] {
@@ -97,11 +112,14 @@ function BusinessGroupView({
   payments: Payment[];
   dateRange: { start: string; end: string };
   onDateRangeChange: (start: string, end: string) => void;
-  onAddPayment: (regNum: string, businessName: string, amount: number, memo: string) => Promise<void>;
+  onAddPayment: (regNum: string, businessName: string, amount: number, memo: string, paymentType: PaymentType) => Promise<void>;
   onDeletePayment: (paymentId: string) => Promise<void>;
   formatDate: (iso: string) => string;
 }) {
-  const [paymentForms, setPaymentForms] = useState<Record<string, { amount: string; memo: string }>>({});
+  const [paymentForms, setPaymentForms] = useState<Record<string, { amount: string; memo: string; paymentType: PaymentType }>>({});
+  const [creditLimits, setCreditLimits] = useState<Record<string, number | undefined>>({});
+  const [creditDialogOpen, setCreditDialogOpen] = useState<string | null>(null);
+  const [creditLimitInput, setCreditLimitInput] = useState('');
 
   const filteredOrders = orders.filter((o) => {
     const d = o.createdAt.slice(0, 10);
@@ -148,6 +166,14 @@ function BusinessGroupView({
           size="small"
           InputLabelProps={{ shrink: true }}
         />
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<DownloadIcon />}
+          onClick={() => exportPaymentsCsv(payments)}
+        >
+          입금 CSV
+        </Button>
       </Box>
 
       {grouped.size === 0 ? (
@@ -161,7 +187,9 @@ function BusinessGroupView({
           const regPayments = paymentsByReg.get(regNum) ?? [];
           const paidTotal = regPayments.reduce((sum, p) => sum + p.amount, 0);
           const unpaid = totalAmount - paidTotal;
-          const form = paymentForms[regNum] ?? { amount: '', memo: '' };
+          const form = paymentForms[regNum] ?? { amount: '', memo: '', paymentType: 'settlement' as PaymentType };
+          const creditLimit = creditLimits[regNum];
+          const overCreditLimit = creditLimit !== undefined && creditLimit > 0 && unpaid > creditLimit;
 
           return (
             <Accordion key={regNum} disableGutters>
@@ -176,13 +204,21 @@ function BusinessGroupView({
                       총 {totalAmount.toLocaleString()}원
                     </Typography>
                   </Box>
-                  <Box sx={{ display: 'flex', gap: 2, mt: 0.5, flexWrap: 'wrap' }}>
+                  <Box sx={{ display: 'flex', gap: 2, mt: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
                     <Typography variant="body2" color="success.main">
                       입금: {paidTotal.toLocaleString()}원
                     </Typography>
                     <Typography variant="body2" color={unpaid > 0 ? 'error.main' : 'success.main'} fontWeight="bold">
                       미수금: {unpaid.toLocaleString()}원
                     </Typography>
+                    {creditLimit !== undefined && creditLimit > 0 && (
+                      <Typography variant="body2" color="text.secondary">
+                        외상한도: {creditLimit.toLocaleString()}원
+                      </Typography>
+                    )}
+                    {overCreditLimit && (
+                      <Chip label="외상 한도 초과!" size="small" color="error" variant="filled" />
+                    )}
                   </Box>
                   <Typography variant="body2" color="text.secondary">
                     사업자번호: {regNum} | 대표자: {first.representative ?? '정보 없음'} | 연락처: {first.phone ?? '정보 없음'}
@@ -221,6 +257,13 @@ function BusinessGroupView({
                       <Typography variant="subtitle2" fontWeight="bold">입금 내역</Typography>
                       {regPayments.map((p) => (
                         <Paper key={p.id} variant="outlined" sx={{ p: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Chip
+                            label={PAYMENT_TYPE_LABELS[p.paymentType ?? 'settlement']}
+                            size="small"
+                            color={p.paymentType === 'advance' ? 'info' : p.paymentType === 'refund' ? 'warning' : 'success'}
+                            variant="outlined"
+                            sx={{ minWidth: 50 }}
+                          />
                           <Typography variant="body2" sx={{ flex: 1 }}>
                             {formatDate(p.createdAt)} — <strong>{p.amount.toLocaleString()}원</strong>
                             {p.memo ? ` (${p.memo})` : ''}
@@ -236,6 +279,20 @@ function BusinessGroupView({
                   {/* 입금 등록 폼 */}
                   <Divider sx={{ my: 1 }} />
                   <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <FormControl size="small" sx={{ minWidth: 100 }}>
+                      <InputLabel>유형</InputLabel>
+                      <Select
+                        value={form.paymentType}
+                        label="유형"
+                        onChange={(e) =>
+                          setPaymentForms((prev) => ({ ...prev, [regNum]: { ...form, paymentType: e.target.value as PaymentType } }))
+                        }
+                      >
+                        <MenuItem value="settlement">정산</MenuItem>
+                        <MenuItem value="advance">선입금</MenuItem>
+                        <MenuItem value="refund">환불</MenuItem>
+                      </Select>
+                    </FormControl>
                     <TextField
                       size="small"
                       type="number"
@@ -260,19 +317,71 @@ function BusinessGroupView({
                       variant="contained"
                       disabled={!form.amount || Number(form.amount) <= 0}
                       onClick={async () => {
-                        await onAddPayment(regNum, first.businessName, Number(form.amount), form.memo);
-                        setPaymentForms((prev) => ({ ...prev, [regNum]: { amount: '', memo: '' } }));
+                        await onAddPayment(regNum, first.businessName, Number(form.amount), form.memo, form.paymentType);
+                        setPaymentForms((prev) => ({ ...prev, [regNum]: { amount: '', memo: '', paymentType: 'settlement' } }));
                       }}
                     >
                       입금 등록
                     </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="secondary"
+                      onClick={() => {
+                        setCreditLimitInput(creditLimit !== undefined ? String(creditLimit) : '');
+                        setCreditDialogOpen(regNum);
+                      }}
+                    >
+                      외상 한도 설정
+                    </Button>
                   </Box>
+                  {overCreditLimit && (
+                    <Alert severity="error" sx={{ mt: 1 }}>
+                      미수금({unpaid.toLocaleString()}원)이 외상 한도({creditLimit!.toLocaleString()}원)를 초과했습니다!
+                    </Alert>
+                  )}
                 </Stack>
               </AccordionDetails>
             </Accordion>
           );
         })
       )}
+
+      {/* 외상 한도 설정 다이얼로그 */}
+      <Dialog open={creditDialogOpen !== null} onClose={() => setCreditDialogOpen(null)}>
+        <DialogTitle>외상 한도 설정</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            type="number"
+            label="외상 한도 (원)"
+            value={creditLimitInput}
+            onChange={(e) => setCreditLimitInput(e.target.value)}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreditDialogOpen(null)}>취소</Button>
+          <Button
+            variant="contained"
+            onClick={async () => {
+              if (creditDialogOpen) {
+                const limitVal = Number(creditLimitInput) || 0;
+                // 사업자번호로 프로필 찾아서 uid 기반으로 저장
+                const found = await findProfileByRegNumber(creditDialogOpen);
+                if (found) {
+                  await updateCreditLimit(found.uid, limitVal);
+                }
+                setCreditLimits((prev) => ({ ...prev, [creditDialogOpen]: limitVal }));
+              }
+              setCreditDialogOpen(null);
+            }}
+          >
+            저장
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }
@@ -349,8 +458,8 @@ export default function AdminDashboard() {
     setLoading(true);
     try {
       const [orderData, paymentData] = await Promise.all([
-        getAllOrders(),
-        getAllPayments(),
+        getAllOrders(dateRange.start, dateRange.end),
+        getAllPayments(dateRange.start, dateRange.end),
       ]);
       setOrders(orderData);
       setPayments(paymentData);
@@ -359,7 +468,7 @@ export default function AdminDashboard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [dateRange]);
 
   useEffect(() => {
     fetchOrders();
@@ -709,10 +818,10 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
     }
   };
 
-  const getLoadingListOrders = (vehicle: DeliveryVehicle) =>
+  const getLoadingListOrders = useCallback((vehicle: DeliveryVehicle) =>
     orders
       .filter((o) => o.deliveryVehicle === vehicle)
-      .sort((a, b) => (b.deliverySequence ?? 0) - (a.deliverySequence ?? 0));
+      .sort((a, b) => (b.deliverySequence ?? 0) - (a.deliverySequence ?? 0)), [orders]);
 
   const handleCopyLoadingList = (vehicle: DeliveryVehicle) => {
     const listOrders = getLoadingListOrders(vehicle);
@@ -730,14 +839,17 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
     window.print();
   };
 
-  const activeVehicles = getActiveVehicles(orders);
+  const activeVehicles = useMemo(() => getActiveVehicles(orders), [orders]);
 
-  const tabFilters: { label: string; value: TabFilter }[] = [
+  const tabFilters: { label: string; value: TabFilter }[] = useMemo(() => [
     { label: '전체', value: 'all' },
     { label: '미배정', value: 'unassigned' },
     ...activeVehicles.map((v) => ({ label: v, value: v })),
     { label: '사업자별', value: 'byBusiness' },
-  ];
+    { label: '세금계산서', value: 'taxInvoice' },
+    { label: '정산', value: 'settlement' },
+    { label: '통계', value: 'stats' },
+  ], [activeVehicles]);
 
   const applyDateFilter = useCallback((list: Order[]) => {
     const range = getOrderDateRange(orderDateFilter);
@@ -750,7 +862,7 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
 
   const dateFilteredOrders = applyDateFilter(orders);
 
-  const getFilteredOrders = () => {
+  const filteredOrders = useMemo(() => {
     let result: Order[];
     switch (filter) {
       case 'all':
@@ -769,23 +881,21 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
       result = result.filter((o) => o.status !== 'delivered');
     }
     return result;
-  };
+  }, [dateFilteredOrders, filter, hideDelivered]);
+  const pendingCount = useMemo(() => dateFilteredOrders.filter((o) => o.status === 'pending').length, [dateFilteredOrders]);
+  const deliveredCount = useMemo(() => dateFilteredOrders.filter((o) => o.status === 'delivered').length, [dateFilteredOrders]);
 
-  const filteredOrders = getFilteredOrders();
-  const pendingCount = dateFilteredOrders.filter((o) => o.status === 'pending').length;
-  const deliveredCount = dateFilteredOrders.filter((o) => o.status === 'delivered').length;
-
-  const dateRangeLabel = (() => {
+  const dateRangeLabel = useMemo(() => {
     const range = getOrderDateRange(orderDateFilter);
     if (!range) return '';
     if (range.start === range.end) return range.start;
     return `${range.start} ~ ${range.end}`;
-  })();
+  }, [orderDateFilter]);
 
-  const formatDate = (iso: string) => {
+  const formatDate = useCallback((iso: string) => {
     const d = new Date(iso);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  };
+  }, []);
 
   return (
     <Box>
@@ -827,14 +937,20 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
                 const d = new Date(o.createdAt);
                 return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
               }).length;
+            } else if (t.value === 'taxInvoice') {
+              count = 0;
+            } else if (t.value === 'settlement') {
+              count = 0;
+            } else if (t.value === 'stats') {
+              count = orders.length;
             } else {
               count = dateFilteredOrders.filter((o) => o.deliveryVehicle === t.value).length;
             }
-            return <Tab key={t.value} label={`${t.label} (${count})`} />;
+            return <Tab key={t.value} label={t.value === 'taxInvoice' || t.value === 'settlement' ? t.label : `${t.label} (${count})`} />;
           })}
         </Tabs>
 
-        {filter !== 'byBusiness' && (
+        {filter !== 'byBusiness' && filter !== 'stats' && filter !== 'taxInvoice' && filter !== 'settlement' && (
           <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
             <ToggleButtonGroup
               value={orderDateFilter}
@@ -856,7 +972,7 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
           </Box>
         )}
 
-        <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+        {filter !== 'stats' && filter !== 'taxInvoice' && filter !== 'settlement' && <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
           {pendingCount > 0 && (
             <Button
               variant="contained"
@@ -888,6 +1004,13 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
               배차 초기화
             </Button>
           )}
+          <Button
+            variant="outlined"
+            startIcon={<DownloadIcon />}
+            onClick={() => exportOrdersCsv(orders)}
+          >
+            주문 CSV
+          </Button>
           {activeVehicles.map((v) => {
             const vNotDelivered = orders.filter(
               (o) => o.deliveryVehicle === v && o.status !== 'delivered'
@@ -926,20 +1049,26 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
               {hideDelivered ? `배송완료 숨김 (${deliveredCount}건)` : '배송완료 표시 중'}
             </Button>
           )}
-        </Box>
+        </Box>}
 
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
             <CircularProgress />
           </Box>
+        ) : filter === 'stats' ? (
+          <StatsView orders={orders} />
+        ) : filter === 'taxInvoice' ? (
+          <TaxInvoiceView orders={orders} />
+        ) : filter === 'settlement' ? (
+          <SettlementView orders={orders} payments={payments} />
         ) : filter === 'byBusiness' ? (
           <BusinessGroupView
             orders={orders}
             payments={payments}
             dateRange={dateRange}
             onDateRangeChange={(start, end) => setDateRange({ start, end })}
-            onAddPayment={async (regNum, businessName, amount, memo) => {
-              const id = await addPayment(regNum, businessName, amount, memo || undefined);
+            onAddPayment={async (regNum, businessName, amount, memo, paymentType) => {
+              const id = await addPayment(regNum, businessName, amount, memo || undefined, paymentType);
               setPayments((prev) => [{
                 id,
                 registrationNumber: regNum,
@@ -947,6 +1076,7 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
                 amount,
                 memo: memo || '',
                 createdAt: new Date().toISOString(),
+                paymentType,
               }, ...prev]);
             }}
             onDeletePayment={async (paymentId) => {
@@ -1003,6 +1133,23 @@ vehicle 값은 반드시 ${vehicleList} 중 하나여야 합니다.`,
                     {' — '}
                     <strong>{order.totalPrice.toLocaleString()}원</strong>
                   </Typography>
+
+                  {/* Delivery Note */}
+                  {order.deliveryNote && (
+                    <Paper
+                      sx={{
+                        p: 1,
+                        mb: 1,
+                        bgcolor: '#fff8e1',
+                        border: '1px solid #ffe082',
+                        borderRadius: 1,
+                      }}
+                    >
+                      <Typography variant="body2" sx={{ fontWeight: 500, color: '#6d4c00' }}>
+                        배송메모: {order.deliveryNote}
+                      </Typography>
+                    </Paper>
+                  )}
 
                   {/* Date */}
                   <Typography variant="caption" color="text.secondary">

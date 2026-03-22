@@ -1,69 +1,31 @@
+import React, { Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
-import CssBaseline from '@mui/material/CssBaseline';
 import CircularProgress from '@mui/material/CircularProgress';
 import Box from '@mui/material/Box';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { ProfileProvider, useProfile } from './context/ProfileContext';
 import { AdminAuthProvider, useAdminAuth } from './admin/AdminAuthContext';
-import AdminLoginPage from './admin/AdminLoginPage';
-import AdminDashboard from './admin/AdminDashboard';
+import { AppThemeProvider } from './context/ThemeContext';
 import Header from './components/Header';
-import ProductListPage from './pages/ProductListPage';
-import CartPage from './pages/CartPage';
-import ProfilePage from './pages/ProfilePage';
-import OrderCompletePage from './pages/OrderCompletePage';
-import OrderHistoryPage from './pages/OrderHistoryPage';
-import DriverPage from './pages/DriverPage';
+import OfflineBanner from './components/OfflineBanner';
+import ErrorBoundary from './components/ErrorBoundary';
 
-const theme = createTheme({
-  palette: {
-    primary: { main: '#FF6B8A', dark: '#E05577' },
-    secondary: { main: '#FFB74D' },
-    background: { default: '#FFF5F7', paper: '#FFFFFF' },
-  },
-  shape: { borderRadius: 12 },
-  typography: {
-    fontFamily: '"Noto Sans KR", "Roboto", sans-serif',
-  },
-  components: {
-    MuiButton: {
-      styleOverrides: {
-        root: { borderRadius: 25, textTransform: 'none', fontWeight: 600 },
-      },
-    },
-    MuiCard: {
-      styleOverrides: {
-        root: { borderRadius: 16, boxShadow: '0 2px 12px rgba(255,107,138,0.08)' },
-      },
-    },
-    MuiPaper: {
-      styleOverrides: {
-        root: { borderRadius: 16 },
-      },
-    },
-    MuiAppBar: {
-      styleOverrides: {
-        root: { backgroundColor: '#FFFFFF', color: '#FF6B8A', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' },
-      },
-    },
-    MuiTextField: {
-      styleOverrides: {
-        root: {
-          '& .MuiOutlinedInput-root': {
-            '&.Mui-focused fieldset': { borderColor: '#FF6B8A' },
-          },
-        },
-      },
-    },
-    MuiChip: {
-      styleOverrides: {
-        root: { borderRadius: 20 },
-      },
-    },
-  },
-});
+// Lazy-loaded pages
+const AdminLoginPage = React.lazy(() => import('./admin/AdminLoginPage'));
+const AdminDashboard = React.lazy(() => import('./admin/AdminDashboard'));
+const DriverPage = React.lazy(() => import('./pages/DriverPage'));
+const ProductListPage = React.lazy(() => import('./pages/ProductListPage'));
+const CartPage = React.lazy(() => import('./pages/CartPage'));
+const ProfilePage = React.lazy(() => import('./pages/ProfilePage'));
+const OrderCompletePage = React.lazy(() => import('./pages/OrderCompletePage'));
+const OrderHistoryPage = React.lazy(() => import('./pages/OrderHistoryPage'));
+
+const SuspenseFallback = () => (
+  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
+    <CircularProgress />
+  </Box>
+);
 
 function AppRoutes() {
   const { isRegistered, loading } = useProfile();
@@ -77,25 +39,27 @@ function AppRoutes() {
   }
 
   return (
-    <Routes>
-      <Route path="/profile" element={<ProfilePage />} />
-      <Route
-        path="/"
-        element={isRegistered ? <ProductListPage /> : <Navigate to="/profile" replace />}
-      />
-      <Route
-        path="/cart"
-        element={isRegistered ? <CartPage /> : <Navigate to="/profile" replace />}
-      />
-      <Route
-        path="/order-complete"
-        element={isRegistered ? <OrderCompletePage /> : <Navigate to="/profile" replace />}
-      />
-      <Route
-        path="/orders"
-        element={isRegistered ? <OrderHistoryPage /> : <Navigate to="/profile" replace />}
-      />
-    </Routes>
+    <Suspense fallback={<SuspenseFallback />}>
+      <Routes>
+        <Route path="/profile" element={<ProfilePage />} />
+        <Route
+          path="/"
+          element={isRegistered ? <ProductListPage /> : <Navigate to="/profile" replace />}
+        />
+        <Route
+          path="/cart"
+          element={isRegistered ? <CartPage /> : <Navigate to="/profile" replace />}
+        />
+        <Route
+          path="/order-complete"
+          element={isRegistered ? <OrderCompletePage /> : <Navigate to="/profile" replace />}
+        />
+        <Route
+          path="/orders"
+          element={isRegistered ? <OrderHistoryPage /> : <Navigate to="/profile" replace />}
+        />
+      </Routes>
+    </Suspense>
   );
 }
 
@@ -124,7 +88,11 @@ function AdminApp() {
     );
   }
 
-  return isAdmin ? <AdminDashboard /> : <AdminLoginPage />;
+  return (
+    <Suspense fallback={<SuspenseFallback />}>
+      {isAdmin ? <AdminDashboard /> : <AdminLoginPage />}
+    </Suspense>
+  );
 }
 
 function RegularApp() {
@@ -133,6 +101,7 @@ function RegularApp() {
       <AuthGate>
         <ProfileProvider>
           <CartProvider>
+            <OfflineBanner />
             <Header />
             <AppRoutes />
           </CartProvider>
@@ -147,18 +116,21 @@ function App() {
   const isDriverRoute = window.location.pathname.startsWith('/driver');
 
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      {isAdminRoute ? (
-        <AdminAuthProvider>
-          <AdminApp />
-        </AdminAuthProvider>
-      ) : isDriverRoute ? (
-        <DriverPage />
-      ) : (
-        <RegularApp />
-      )}
-    </ThemeProvider>
+    <AppThemeProvider>
+      <ErrorBoundary>
+        {isAdminRoute ? (
+          <AdminAuthProvider>
+            <AdminApp />
+          </AdminAuthProvider>
+        ) : isDriverRoute ? (
+          <Suspense fallback={<SuspenseFallback />}>
+            <DriverPage />
+          </Suspense>
+        ) : (
+          <RegularApp />
+        )}
+      </ErrorBoundary>
+    </AppThemeProvider>
   );
 }
 

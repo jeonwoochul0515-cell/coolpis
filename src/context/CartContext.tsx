@@ -1,4 +1,4 @@
-import { createContext, useContext, useReducer, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useReducer, type ReactNode } from 'react';
 import type { CartItem, Product } from '../types/product';
 
 type CartAction =
@@ -84,8 +84,33 @@ function playAddSound() {
   }
 }
 
+const CART_STORAGE_KEY = 'coolpis-cart';
+
+function loadCartFromStorage(): CartItem[] {
+  try {
+    const stored = localStorage.getItem(CART_STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
+  } catch {
+    // parsing failed, fall back to empty array
+  }
+  return [];
+}
+
 export function CartProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(cartReducer, { items: [] });
+  const [state, dispatch] = useReducer(cartReducer, { items: loadCartFromStorage() });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(state.items));
+    } catch {
+      // storage full or unavailable, silently ignore
+    }
+  }, [state.items]);
 
   const addToCart = (product: Product, quantity: number) => {
     dispatch({ type: 'ADD_TO_CART', product, quantity });
@@ -102,6 +127,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const clearCart = () => {
     dispatch({ type: 'CLEAR_CART' });
+    try {
+      localStorage.removeItem(CART_STORAGE_KEY);
+    } catch {
+      // silently ignore
+    }
   };
 
   const totalItems = state.items.reduce((sum, item) => sum + item.quantity, 0);

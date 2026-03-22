@@ -2,6 +2,7 @@ import {
   doc,
   setDoc,
   getDoc,
+  updateDoc,
   query,
   where,
   getDocs,
@@ -53,4 +54,11 @@ export async function saveProfile(uid: string, profile: BusinessProfile): Promis
   console.log('[프로필 저장] uid:', uid, '번호:', profile.registrationNumber);
   await setDoc(doc(db, PROFILES_COLLECTION, uid), profile);
   console.log('[프로필 저장] 완료');
+}
+
+/** 외상 한도 설정 */
+export async function updateCreditLimit(uid: string, limit: number): Promise<void> {
+  console.log('[외상 한도 설정] uid:', uid, '한도:', limit);
+  await updateDoc(doc(db, PROFILES_COLLECTION, uid), { creditLimit: limit });
+  console.log('[외상 한도 설정] 완료');
 }

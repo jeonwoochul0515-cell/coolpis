@@ -20,7 +20,8 @@ export async function saveOrder(
   profile: BusinessProfile,
   items: CartItem[],
   totalItems: number,
-  totalPrice: number
+  totalPrice: number,
+  deliveryNote?: string
 ): Promise<string> {
   const orderItems: OrderItem[] = items.map((item) => ({
     productId: item.product.id,
@@ -44,6 +45,7 @@ export async function saveOrder(
     createdAt: new Date().toISOString(),
     deliveryVehicle: null,
     deliverySequence: 0,
+    ...(deliveryNote ? { deliveryNote } : {}),
   });
 
   console.log('[주문 저장] id:', docRef.id);

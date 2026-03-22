@@ -19,18 +19,23 @@ import AutorenewIcon from '@mui/icons-material/Autorenew';
 import { useNavigate } from 'react-router-dom';
 import { useProfile } from '../context/ProfileContext';
 import { getOrdersByUid, cancelOrder } from '../services/orderStore';
-import type { Order } from '../types/order';
+import type { Order, OrderStatus } from '../types/order';
+import { estimateEta } from '../utils/deliveryEta';
 
-const STATUS_LABEL: Record<Order['status'], string> = {
+const STATUS_LABEL: Record<OrderStatus, string> = {
   pending: '접수 대기',
   confirmed: '주문 확인',
+  in_transit: '배송중',
   delivered: '배송 완료',
+  failed: '배송 실패',
 };
 
-const STATUS_COLOR: Record<Order['status'], 'warning' | 'info' | 'success'> = {
+const STATUS_COLOR: Record<OrderStatus, 'warning' | 'info' | 'success' | 'error' | 'default'> = {
   pending: 'warning',
   confirmed: 'info',
+  in_transit: 'info',
   delivered: 'success',
+  failed: 'error',
 };
 
 const STEP_LABELS = ['접수', '확인', '배송중', '완료'];
@@ -40,7 +45,9 @@ const AUTO_REFRESH_INTERVAL = 30_000; // 30 seconds
 /** Determine the active step index (0-based) for the MUI Stepper. */
 function getActiveStep(order: Order): number {
   if (order.status === 'delivered') return 4; // all steps complete
-  if (order.status === 'confirmed' && order.deliveryVehicle) return 3; // 배송중 is active
+  if (order.status === 'failed') return 3; // failed during transit
+  if (order.status === 'in_transit') return 3; // 배송중 is active
+  if (order.status === 'confirmed' && order.deliveryVehicle) return 3; // 배송중 is active (legacy)
   if (order.status === 'confirmed') return 2; // 확인 is active
   return 1; // 접수 is complete, pending on 확인
 }
@@ -48,6 +55,8 @@ function getActiveStep(order: Order): number {
 /** Friendly delivery message based on order state. */
 function getDeliveryMessage(order: Order): string | null {
   if (order.status === 'delivered') return '배송이 완료되었습니다';
+  if (order.status === 'failed') return '배송에 실패했습니다';
+  if (order.status === 'in_transit') return '배송차가 출발했습니다';
   if (order.status === 'confirmed' && order.deliveryVehicle) {
     return '배송차가 출발했습니다';
   }
@@ -56,8 +65,14 @@ function getDeliveryMessage(order: Order): string | null {
 }
 
 /** Chip color with vehicle-assignment awareness. */
-function getChipProps(order: Order): { label: string; color: 'warning' | 'info' | 'success'; icon?: React.ReactElement } {
+function getChipProps(order: Order): { label: string; color: 'warning' | 'info' | 'success' | 'error' | 'default'; icon?: React.ReactElement } {
+  if (order.status === 'failed') {
+    return { label: STATUS_LABEL.failed, color: 'error' };
+  }
   const base = { label: STATUS_LABEL[order.status], color: STATUS_COLOR[order.status] };
+  if (order.status === 'in_transit') {
+    return { ...base, label: '배송중', icon: <LocalShippingIcon /> };
+  }
   if (order.status === 'confirmed' && order.deliveryVehicle) {
     return { ...base, label: '배송중', icon: <LocalShippingIcon /> };
   }
@@ -241,11 +256,19 @@ export default function OrderHistoryPage() {
                       '& .MuiStepLabel-label': { fontSize: '0.7rem', mt: 0.5 },
                       '& .MuiStepIcon-root': { width: 22, height: 22 },
                       '& .MuiStepConnector-line': { minHeight: 0 },
+                      ...(order.status === 'failed' && {
+                        '& .MuiStepIcon-root.Mui-active': { color: 'error.main' },
+                        '& .MuiStepLabel-label.Mui-active': { color: 'error.main' },
+                      }),
                     }}
                   >
                     {STEP_LABELS.map((label) => (
                       <Step key={label}>
-                        <StepLabel>{label}</StepLabel>
+                        <StepLabel
+                          error={order.status === 'failed' && label === '배송중'}
+                        >
+                          {order.status === 'failed' && label === '배송중' ? '실패' : label}
+                        </StepLabel>
                       </Step>
                     ))}
                   </Stepper>
@@ -261,16 +284,20 @@ export default function OrderHistoryPage() {
                       bgcolor:
                         order.status === 'delivered'
                           ? 'success.50'
-                          : hasVehicle
-                            ? 'info.50'
-                            : 'grey.50',
+                          : order.status === 'failed'
+                            ? 'error.50'
+                            : hasVehicle || order.status === 'in_transit'
+                              ? 'info.50'
+                              : 'grey.50',
                       border: '1px solid',
                       borderColor:
                         order.status === 'delivered'
                           ? 'success.200'
-                          : hasVehicle
-                            ? 'info.200'
-                            : 'grey.200',
+                          : order.status === 'failed'
+                            ? 'error.200'
+                            : hasVehicle || order.status === 'in_transit'
+                              ? 'info.200'
+                              : 'grey.200',
                     }}
                   >
                     {hasVehicle && (
@@ -291,6 +318,14 @@ export default function OrderHistoryPage() {
                         )}
                       </Box>
                     )}
+                    {/* ETA - 배송중 또는 확인됨 상태에서 deliverySequence가 있을 때 표시 */}
+                    {(order.status === 'in_transit' || order.status === 'confirmed') &&
+                      typeof order.deliverySequence === 'number' &&
+                      order.deliverySequence > 0 && (
+                        <Typography variant="body2" sx={{ mt: 0.5, color: 'info.main', fontWeight: 600 }}>
+                          예상 도착: {estimateEta(order.deliverySequence, orders.length)}
+                        </Typography>
+                      )}
                     {deliveryMsg && (
                       <Typography variant="body2" color="text.secondary" sx={{ mt: hasVehicle ? 0.5 : 0 }}>
                         {deliveryMsg}
