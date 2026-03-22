@@ -83,7 +83,7 @@ export default function DeliveryMap({ orders, height = '500px' }: DeliveryMapPro
   const [error, setError] = useState<string | null>(null);
   const [geocodingProgress, setGeocodingProgress] = useState('');
 
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyDuj6NUMUwmaatM1xAuKyIwGBjYyBUUu64';
 
   const geocodeAddress = useCallback(async (
     geocoder: any,
